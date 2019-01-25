@@ -51,7 +51,7 @@ void print_help()
 
 int main(int argc, char** argv)
 {
-	u_int64_t k, h, d, seq_len;
+	size_t k, h, d, seq_len;
 	int c, streaming;
 	char output_file[100];
 	char *input_file;
@@ -109,7 +109,7 @@ int main(int argc, char** argv)
 	seq = kseq_init(fp);
 
 	//Input handling
-	u_int64_t hVec[h];
+	uint64_t hVec[h];
 	bool first = true;
 	while(kseq_read(seq) >= 0)
 	{
