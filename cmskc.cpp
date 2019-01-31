@@ -72,6 +72,8 @@ int main(int argc, char** argv)
 		return -1;
 	}
 
+	//fprintf(stderr, "Initialization and Checking done\n");
+
 	//reading command-line options
 	input_file = nullptr;
 	while((c = ketopt(&opt, argc, argv, 1, "k:h:d:o:i:", longopts)) >= 0) {
@@ -91,22 +93,33 @@ int main(int argc, char** argv)
 		}
 	}
 	
+	//fprintf(stderr, "Input parameters read\n");
+
 	//count-min set-up
 	cms_init(&cms, d, h);
 	if(cms.width != d || cms.depth != h) {
-		fprintf(stderr, "Error initializing the sketch");
+		fprintf(stderr, "Error initializing the sketch\n");
 		return -2;
 	}
+	
+	//fprintf(stderr, "Count min setted up\n");
 
 	//Opening the file
 	instream = nullptr;
 	if(input_file) {
+		fprintf(stderr, "%s\n", input_file);
 		instream = fopen(input_file, "r");
+		fprintf(stderr, "check 0\n");
 		delete [] input_file;
 	}
 	else instream = stdin;
+	fprintf(stderr, "check 1\n");
 	fp = gzdopen(fileno(instream), "r");
+	fprintf(stderr, "check 2\n");
 	seq = kseq_init(fp);
+	fprintf(stderr, "check 3\n");
+
+	//fprintf(stderr, "Input file opened\n");
 
 	//Input handling
 	uint64_t hVec[h];
@@ -178,6 +191,7 @@ int main(int argc, char** argv)
 	kseq_destroy(seq);
 	gzclose(fp);
 
-	fprintf(stderr, "Exporting count-min\n");
+	//fprintf(stderr, "Exporting count-min\n");
 	cms_export(&cms, output_file);
+	//fprintf(stderr, "Count-Min exported\n");
 }

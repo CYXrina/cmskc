@@ -1,10 +1,15 @@
-all:sketcher
+all:main compare print
 
-sketcher:main count_min_sketch
-	g++ -o cmskc main.o count_min_sketch.o -lz -lm
+main:cmskc count_min_sketch
+	g++ -o cmskc cmskc.o count_min_sketch.o -lz -lm
+cmskc:
+	g++ -c cmskc.cpp -o cmskc.o
 
-main:
-	g++ -c main.cpp -o main.o
+compare:count_min_sketch
+	gcc compare_cms.c count_min_sketch.o -lm -o compare_cms
+
+print:count_min_sketch
+	gcc print_cms.c count_min_sketch.o -lm -o print_cms
 
 count_min_sketch:
 	gcc -c count_min_sketch.c -o count_min_sketch.o

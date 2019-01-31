@@ -1,5 +1,13 @@
 #include <stdio.h>
+#include <limits.h>
 #include "count_min_sketch.h"
+
+void denoise(CountMinSketch *cms)
+{
+    int32_t min = INT_MAX;
+    for(long i = 0; i < cms->depth * cms->width; ++i) if(min > cms->bins[i]) min = cms->bins[i];
+	for(long i = 0; i < cms->depth * cms->width; ++i) cms->bins[i] -= min;
+}
 
 int main(int argc, char** argv)
 {
