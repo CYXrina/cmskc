@@ -5,11 +5,11 @@ int main(int argc, char** argv)
 {
 	double num, den;
 	CountMinSketch cms1, cms2;
-	cms_import(cms1, argv[1]);
-	cms_import(cms2, argv[2]);
+	cms_import(&cms1, argv[1]);
+	cms_import(&cms2, argv[2]);
 	if(cms1.depth != cms2.depth || cms1.width != cms2.width) {
 		fprintf(stderr, "The two sketches are not compatible!");
-		return -1;
+		return 1;
 	}
 	num = den = 0;
 	for(long i = 0; i < cms1.depth * cms1.width; ++i)
@@ -23,6 +23,6 @@ int main(int argc, char** argv)
 		}
 	}
 	if(num == den) printf("1.0");
-	else printf("%d", num/den);
+	else printf("%f", num/den);
 	return 0;	
 }
