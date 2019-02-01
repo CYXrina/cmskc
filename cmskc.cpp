@@ -12,25 +12,6 @@ KSEQ_INIT(gzFile, gzread)
 
 using namespace std;
 
-unsigned char seq_table[256] = {
-	  0,   1,   2,   3,  255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,
-	255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,
-	255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,
-	255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,
-	255,   0, 255,   1,  255, 255, 255,   2,  255, 255, 255, 255,  255, 255, 255, 255,
-	255, 255, 255, 255,    3,   3, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,
-	255,   0, 255,   1,  255, 255, 255,   2,  255, 255, 255, 255,  255, 255, 255, 255,
-	255, 255, 255, 255,    3,   3, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,
-	255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,
-	255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,
-	255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,
-	255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,
-	255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,
-	255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,
-	255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,
-	255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255
-};
-
 char safe_toupper(char ch)
 {
 	return static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
@@ -60,6 +41,8 @@ int main(int argc, char** argv)
 	ketopt_t opt = KETOPT_INIT;
 	CountMinSketch cms;
 	FILE *instream;
+
+	char *debug_kmer;
 	
 	static ko_longopt_t longopts[] = {
 		{NULL, 0, 0}
@@ -92,8 +75,6 @@ int main(int argc, char** argv)
 			return -1;
 		}
 	}
-	
-	//fprintf(stderr, "Input parameters read\n");
 
 	//count-min set-up
 	cms_init(&cms, d, h);
@@ -101,27 +82,28 @@ int main(int argc, char** argv)
 		fprintf(stderr, "Error initializing the sketch\n");
 		return -2;
 	}
-	
-	//fprintf(stderr, "Count min setted up\n");
 
 	//Opening the file
 	instream = nullptr;
 	if(input_file) {
-		fprintf(stderr, "%s\n", input_file);
 		instream = fopen(input_file, "r");
-		fprintf(stderr, "check 0\n");
-		delete [] input_file;
+		//delete [] input_file;
 	}
 	else instream = stdin;
-	fprintf(stderr, "check 1\n");
+	if(!instream) {
+		fprintf(stderr, "Unable to open the input file\n");
+		return 1;
+	}
 	fp = gzdopen(fileno(instream), "r");
-	fprintf(stderr, "check 2\n");
 	seq = kseq_init(fp);
-	fprintf(stderr, "check 3\n");
 
 	//fprintf(stderr, "Input file opened\n");
 
 	//Input handling
+	
+	debug_kmer = new char[k + 1];
+	debug_kmer[k] = '\0';
+	
 	uint64_t hVec[h];
 	bool first = true;
 	while(kseq_read(seq) >= 0)
@@ -137,14 +119,12 @@ int main(int argc, char** argv)
 			{
 				//fprintf(stderr, "Initializing first hash\n");
 				first = false;
-				for(;seq_table[seq->seq.s[i]] == 255 && i < seq_len; ++i); //lock i into good position
-				seq->seq.s[i] = safe_toupper(seq->seq.s[i]);
+				for(;seedTab[seq->seq.s[i]] == 0 && i < seq_len; ++i); //lock i into good position
 				size_t j = i;
 				size_t len = 0;
 				while(len < k && j < seq_len) //check the next k bases if they are good
 				{
-					seq->seq.s[j] = safe_toupper(seq->seq.s[j]);
-					if(seq_table[seq->seq.s[j]] != 255)
+					if(seedTab[seq->seq.s[j]] != 0)
 					{
 						++j;
 						++len;
@@ -160,17 +140,19 @@ int main(int argc, char** argv)
 					//fprintf(stderr, "Ok, add it to the sketch\n");
 					add_to_sketch = true;
 					NTM64(&seq->seq.s[i], k, h, hVec);
+					//imemcpy(debug_kmer, &seq->seq.s[i], k);
 				} else {
 					//fprintf(stderr, "The length of the k-mer is not enough\n");
 					add_to_sketch = false;
 				}
 			} else {
 				//fprintf(stderr, "Rolling %lu: \n", i);
-				if(seq_table[seq->seq.s[i+k]] != 255)
+				if(seedTab[seq->seq.s[i+k]] != 0)
 				{
 					//fprintf(stderr, "ok, the char is good\n");
-					NTM64(seq->seq.s[i], safe_toupper(seq->seq.s[i+k]), k, h, hVec);
 					add_to_sketch = true;
+					NTM64(seq->seq.s[i-1], seq->seq.s[i+k-1], k, h, hVec);
+					//memcpy(debug_kmer, &seq->seq.s[i], k);
 				} else {
 					//fprintf(stderr, "INTERRUPT\n");
 					first = true;
@@ -181,6 +163,7 @@ int main(int argc, char** argv)
 			{
 				//fprintf(stderr, "Adding hash to sketch\n");
 				int32_t freq = cms_add_alt(&cms, hVec, h);
+				//fprintf(stderr, "c[i+k] = %c, c[i] = %c at i = %lu\n", seq->seq.s[i+k], seq->seq.s[i], i);
 				//fprintf(stderr, "Element added, current estimated frequency = %i\n", freq);
 			}
 		}
@@ -190,8 +173,8 @@ int main(int argc, char** argv)
 	}
 	kseq_destroy(seq);
 	gzclose(fp);
+	fclose(instream);
+	delete [] debug_kmer;
 
-	//fprintf(stderr, "Exporting count-min\n");
 	cms_export(&cms, output_file);
-	//fprintf(stderr, "Count-Min exported\n");
 }

@@ -39,6 +39,16 @@ int cms_init_alt(CountMinSketch *cms, uint32_t width, uint32_t depth, cms_hash_f
     return __setup_cms(cms, width, depth, error_rate, confidence, hash_function);
 }
 
+void cms_print(CountMinSketch *cms)
+{
+    for(int i = 0; i < cms->width; ++i)
+	{
+	    for(int j = 0; j < cms->depth; ++j) printf("%i ", cms->bins[j * cms->width + i]);
+	    printf("\n");
+	}
+	printf("width = %i | depth = %i\n", cms->width, cms->depth);
+}
+
 int cms_destroy(CountMinSketch *cms) {
     free(cms->bins);
     cms->width = 0;
@@ -69,15 +79,17 @@ int32_t cms_add_inc_alt(CountMinSketch *cms, uint64_t* hashes, int32_t num_hashe
     int i, num_add = INT_MAX;
     for (i = 0; i < cms->depth; i++) {
         uint64_t bin = (hashes[i] % cms->width) + (i * cms->width);
+        //fprintf(stderr, "bin[%lu] ", bin);
         cms->bins[bin] = __safe_add(cms->bins[bin], x);
         /* currently a standard min strategy */
         if (cms->bins[bin] < num_add) {
             num_add = cms->bins[bin];
         }
     }
+    //fprintf(stderr, "\n");
     cms->elements_added = __safe_add(cms->elements_added, (int64_t)x);
     return num_add;
-}
+}   
 
 int32_t cms_add_inc(CountMinSketch *cms, char* key, unsigned int x) {
     uint64_t* hashes = cms_get_hashes(cms, key);

@@ -45,6 +45,8 @@ static __inline__ int cms_init_optimal(CountMinSketch *cms, float error_rate, fl
     return cms_init_optimal_alt(cms, error_rate, confidence, NULL);
 }
 
+void cms_print(CountMinSketch *cms);
+
 // double cms_bias(CountMinSketch *cms);  // TODO: implement (?)
 
 /* Clean up memory used in the count-min sketch */
