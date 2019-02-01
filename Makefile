@@ -1,9 +1,10 @@
-all:main compare print
+all:builder compare print
 
-main:cmskc count_min_sketch
-	g++ -o cmskc cmskc.o count_min_sketch.o -lz -lm
-cmskc:
-	g++ -c cmskc.cpp -o cmskc.o
+builder:build_cms count_min_sketch
+	g++ -o build_cms build_cms.o count_min_sketch.o -lz -lm
+
+build_cms:
+	g++ -c build_cms.cpp -o build_cms.o
 
 compare:count_min_sketch
 	gcc compare_cms.c count_min_sketch.o -lm -o compare_cms

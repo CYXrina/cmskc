@@ -30,6 +30,7 @@
 *.exe
 *.out
 *.app
-cmskc
+yhgkdb
+build_cms
 compare_cms
 print_cms

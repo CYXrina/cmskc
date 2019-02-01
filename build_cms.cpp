@@ -1,6 +1,5 @@
 #include <zlib.h>
 #include <stdio.h>
-#include <cctype>
 #include "ketopt.h"
 #include "kseq.h"
 #include "nthash.hpp"
@@ -11,11 +10,6 @@ extern "C" {
 KSEQ_INIT(gzFile, gzread)
 
 using namespace std;
-
-char safe_toupper(char ch)
-{
-	return static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
-}
 
 void print_help()
 {
@@ -101,9 +95,6 @@ int main(int argc, char** argv)
 
 	//Input handling
 	
-	debug_kmer = new char[k + 1];
-	debug_kmer[k] = '\0';
-	
 	uint64_t hVec[h];
 	bool first = true;
 	while(kseq_read(seq) >= 0)
@@ -140,21 +131,20 @@ int main(int argc, char** argv)
 					//fprintf(stderr, "Ok, add it to the sketch\n");
 					add_to_sketch = true;
 					NTM64(&seq->seq.s[i], k, h, hVec);
-					//imemcpy(debug_kmer, &seq->seq.s[i], k);
 				} else {
 					//fprintf(stderr, "The length of the k-mer is not enough\n");
 					add_to_sketch = false;
 				}
 			} else {
 				//fprintf(stderr, "Rolling %lu: \n", i);
-				if(seedTab[seq->seq.s[i+k]] != 0)
+				if(seedTab[seq->seq.s[i+k-1]] != 0)
 				{
 					//fprintf(stderr, "ok, the char is good\n");
 					add_to_sketch = true;
 					NTM64(seq->seq.s[i-1], seq->seq.s[i+k-1], k, h, hVec);
-					//memcpy(debug_kmer, &seq->seq.s[i], k);
 				} else {
 					//fprintf(stderr, "INTERRUPT\n");
+					i = i+k-1;
 					first = true;
 					add_to_sketch = false;
 				}
@@ -174,7 +164,6 @@ int main(int argc, char** argv)
 	kseq_destroy(seq);
 	gzclose(fp);
 	fclose(instream);
-	delete [] debug_kmer;
 
 	cms_export(&cms, output_file);
 }
