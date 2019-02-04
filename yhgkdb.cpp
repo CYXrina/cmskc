@@ -17,6 +17,18 @@ char safe_toupper(char ch)
 	return static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
 }
 
+uint8_t get_length_of_leading_zeros(int32_t max_freq)
+{
+	const uint32_t mask = 0x80000000;
+	uint8_t n = 0;
+	while(!(max_freq & mask) && n < 33)
+	{
+		++n;
+		max_freq <<= 1;
+	}
+	return n;
+}
+
 void print_help()
 {
 	fprintf(stderr, "Options:\n");
@@ -34,12 +46,13 @@ void print_help()
 int main(int argc, char* argv[])
 {
 	size_t k, seq_len;
-	int c;
+	int c, p;
 	gzFile fp;
 	kseq_t *seq;
 	ketopt_t opt = KETOPT_INIT;
 	FILE *instream, *outstream;
 	CountMinSketch cms;
+	int32_t freq_max, freq_min;
 
 	static ko_longopt_t longopts[] = {
 		{NULL, 0, 0}
@@ -57,9 +70,16 @@ int main(int argc, char* argv[])
 	//reading command-line options
 	instream = nullptr;
 	outstream = nullptr;
-	while((c = ketopt(&opt, argc, argv, 1, "k:c:o:i:", longopts)) >= 0) {
+	while((c = ketopt(&opt, argc, argv, 1, "k:p:c:o:i:", longopts)) >= 0) {
 		//fprintf(stderr, "opt = %c | arg = %s\n", c, opt.arg);
 		if(c == 'k') k = strtoull(opt.arg, nullptr, 10);
+		else if(c == 'p') {
+			p = atoi(opt.arg);
+			if(p < 0) {
+				fpritnf(stderr, "p must be positive\n");
+				return -3;
+			}
+		}
 		else if(c == 'c') {
 			if(cms_import(&cms, opt.arg)) {
 				fprintf(stderr, "Unable to open CountMinSketch\n");
@@ -89,7 +109,19 @@ int main(int argc, char* argv[])
 	fp = gzdopen(fileno(instream), "r");
 	seq = kseq_init(fp);
 	
-	//TODO find the maximum (and minimum) value of the count-min sketch to know the number of 0s at the beginning of each frequency
+	freq_max = 0;
+	freq_min = numeric_limits<int32_t>::max();
+	for(size_t i = 0; i < cms.depth * cms.width; ++i)
+	{
+		if(cms.bins[i] > freq_max) freq_max = cms.bins[i];
+		if(cms.bins[i] < freq_min) freq_min = cms.bins[i];
+	}
+	size_t zeros_header_len = get_length_of_leading_zeros(freq_max);
+
+	if(32 - zeros_header_len < p) {
+		fprintf(stderr, "Warning! p value greater than maximum suffix frequency length\n");
+		fprintf(stderr, "Consequence: The sketch degenerates to a simple minHash\n");
+	}
 
 	uint64_t hVec[cms.depth];
 	bool first = true;
@@ -145,9 +177,10 @@ int main(int argc, char* argv[])
 					add_to_sketch = false;
 				}
 			}
-			if(add_to_sketch) //ok, add the sketches to the vector
+			if(add_to_sketch) //ok, process the frequency and the k-mer
 			{
 				int32_t freq = cms_check_alt(&cms, hVec, cms.depth);
+				//TODO bucketing
 			}
 		}
 		} else {
