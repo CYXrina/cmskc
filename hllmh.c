@@ -3,7 +3,18 @@
 #define MAX_B_LEN 10
 #define MAX_NMIN 16
 
+#define LEFTMOST_MASK = 0x80 00 00 00 00 00 00 00
 const uint8_t MAGIC_NUMBER = 0xAA;
+
+//return number > 0 if cmax is still the maximum
+//return 0 if query is equal to cmax
+//return number < 0 if cmax must be replaced
+int is_max(uint16_t cmax, uint16_t q)
+{
+    int b_diff = (q >> 10) - (cmax >> 10);
+    if(b_diff != 0) return b_diff;
+    else return (cmax & 0x03FF) - (q & 0x03FF);
+}
 
 int hllmh_init(hllmh *sk, uint8_t prefix_bucket_len, uint8_t b, uint8_t number_of_mins)
 {
@@ -20,8 +31,10 @@ int hllmh_init(hllmh *sk, uint8_t prefix_bucket_len, uint8_t b, uint8_t number_o
     }
     sk->nmins = number_of_mins;
     sk->nbins = sk->nbuckets * sk->nmins;
-    sk->bins = calloc(sk->nbins, 2);
-    return sk->nbins != NULL;
+    sk->bins = malloc(sk->nbins, 2);
+    if(sk->bins == NULL) return 0;
+    for(size_t i = 0; i < sk->nbins; ++i) sk->bins[i] = 0x03FF; //everything is at max value
+    return 1;
 }
 
 int hllmh_serialize_to(hllmh *sk, FILE *outstream)
@@ -32,6 +45,15 @@ int hllmh_serialize_to(hllmh *sk, FILE *outstream)
         fwrite(&sk->pref_len, sizeof(uint8_t), 1, outstream);
         fwrite(&sk->b, sizeof(uint8_t), 1, outstream);
         fwrite(&sk->nmins, sizeof(uint8_t), 1, outstream);
+        fwrite(sk->bins, sizeof(uint16_t), sk->nbins, outstream);
+        return 1;
+    } else return 0;
+}
+
+int serialize_payload_to(hllmh *sk, FILE *outstream)
+{
+    if(outstream != NULL)
+    {
         fwrite(sk->bins, sizeof(uint16_t), sk->nbins, outstream);
         return 1;
     } else return 0;
@@ -88,18 +110,49 @@ int hllmh_get_from(FILE* instream, hllmh *sk)
     }
 }
 
+int hllmh_get_payload_from(FILE* instream, uint8_t prefix_bucket_len, uint8_t b, uint8_t number_of_mins, hllmh *sk)
+{
+    size_t read;
+    sk->pref_len = prefix_bucket_len;
+    sk->nbuckets = pow(2, sk->pref_len);
+    if(b > MAX_B_LEN) {
+        fprintf(stderr, "The maximum dimension for the b-bit part is 10 bits\n");
+        return -1;
+    }
+    sk->b = b;
+    if(number_of_mins > MAX_NMIN) {
+        fprintf(stderr, "Saving more than 16 minimums is a bit excessive, don't you think?\n");
+        return -2;
+    }
+    sk->nmins = number_of_mins;
+    sk->nbins = sk->nbuckets * sk->nmins;
+    sk->bins = malloc(sk->nbins, 2);
+    read = fread(&sk->bins, sizeof(uint16_t), sk->nbins, instream);
+    if(read != sk->nbins) {
+        fprintf(stderr, "Unable to read the bins from the stream\n");
+        return -3;
+    }
+}
+
 int hllmh_add(hllmh *sk, uint64_t hash)
 {
-    uint64_t bucket = hash >> (64 - sk->pref_len);
-    uint64_t bucket_start = bucket * sk->nmins;
-    uint64_t bucket_end = (bucket + 1) * sk->nmins;
+    uint8_t shift = 64 - pref_len;
+    uint64_t bucket = hash >> shift;
+    uint8_t leading_zeros;
+    for(leading_zeros = 0; leading_zeros < shift && !(hash & LEFTMOST_MASK); leading_zeros) hash <<= 1;
+    uint16_t h_elem = (hash >> 54) | (leading_zeros << 10); 
+    
     uint64_t max_idx;
-    uint16_t maximum = 65535; //remember that each hash is saved as (h, b) so to find the maximum we search for the minimum value stored
-    for(size_t i = bucket_start; i < bucket_end; ++i) if(compare(maximum, sk->bin[i]))
+    uint16_t maximum = 0xFC00; //remember that each hash is saved as [6|10] bits where the maximum for the header is 0 while the rest of the bits follw the general arithmetic rule (remember that the header stores the number of heading zeros).
+    const uint64_t bucket_start = bucket * sk->nmins;
+    const uint64_t bucket_end = (bucket + 1) * sk->nmins;
+    for(size_t i = bucket_start; i < bucket_end; ++i) if(is_max(shift, maximum, sk->bin[i]) < 0)
     {
         max_idx = i;
         maximum = sk->bins[i];
     }
+    if(is_max(maximum, h_elem) > 0) sk->bins[max_idx] = h_elem;
+    return 1;
 }
 
 int hllmh_estimate(hllmh *sk, long *estimate) /*not implemented yet, see HLL++ for details in the future*/

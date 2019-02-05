@@ -11,12 +11,18 @@ KSEQ_INIT(gzFile, gzread)
 
 using namespace std;
 
+uint64_t generate_mask(size_t tail_len)
+{
+	return (~0) >> (sizeof(uint64_t) - tail_len);
+}
+
 void print_help()
 {
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "k\tk-mer length\n");
 	fprintf(stderr, "h\tnumber of hashes\n");
 	fprintf(stderr, "d\tnumber of cells for each hash\n");
+	fprintf(stderr, "t\tlength of trailing zeros for a hash to be considered (ntCard sampling)\n");
 	fprintf(stderr, "o\toutput file for the saved count-min sketch\n");
 	fprintf(stderr, "i\tinput (gzipped) file. stdin as default if not specified\n");
 	fprintf(stderr, "\nExample usage: \n");
@@ -26,15 +32,16 @@ void print_help()
 
 int main(int argc, char** argv)
 {
-	size_t k, h, d, seq_len;
+	size_t k, h, d, t, seq_len;
 	int c, streaming;
 	char output_file[100];
 	char *input_file;
+	FILE *instream;
+	uint64_t mask;
 	gzFile fp;
 	kseq_t *seq;
 	ketopt_t opt = KETOPT_INIT;
 	CountMinSketch cms;
-	FILE *instream;
 
 	char *debug_kmer;
 	
@@ -52,12 +59,14 @@ int main(int argc, char** argv)
 	//fprintf(stderr, "Initialization and Checking done\n");
 
 	//reading command-line options
+	t = 0;
 	input_file = nullptr;
-	while((c = ketopt(&opt, argc, argv, 1, "k:h:d:o:i:", longopts)) >= 0) {
+	while((c = ketopt(&opt, argc, argv, 1, "k:h:d:t:o:i:", longopts)) >= 0) {
 		//fprintf(stderr, "opt = %c | arg = %s\n", c, opt.arg);
 		if(c == 'k') k = strtoull(opt.arg, nullptr, 10);
 		else if(c == 'h') h = strtoull(opt.arg, nullptr, 10);
 		else if(c == 'd') d = strtoull(opt.arg, nullptr, 10);
+		else if(c == 't') t = strtoull(opt.arg, nullptr, 10);
 		else if(c == 'o') strcpy(output_file, opt.arg);
 		else if(c == 'i') {
 			input_file = new char[strlen(opt.arg)];
@@ -96,6 +105,8 @@ int main(int argc, char** argv)
 	//Input handling
 	
 	uint64_t hVec[h];
+	if(t > sizeof(uint64_t)) t = sizeof(uint64_t);
+	mask = generate_mask(t);
 	bool first = true;
 	while(kseq_read(seq) >= 0)
 	{
@@ -108,7 +119,7 @@ int main(int argc, char** argv)
 		{
 			if(first) //find the first good kmer
 			{
-				//fprintf(stderr, "Initializing first hash\n");
+				//fprintf(stderr, "Finding good k-mer\n");
 				first = false;
 				for(;seedTab[seq->seq.s[i]] == 0 && i < seq_len; ++i); //lock i into good position
 				size_t j = i;
@@ -125,12 +136,14 @@ int main(int argc, char** argv)
 						len = 0;
 					}
 				}
-				//fprintf(stderr, "First hash initialized: ");
+				//fprintf(stderr, "Good k-mer found\n");
 				if(i < seq_len - k)
 				{
 					//fprintf(stderr, "Ok, add it to the sketch\n");
-					add_to_sketch = true;
 					NTM64(&seq->seq.s[i], k, h, hVec);
+					if((hVec[0] & mask) == 0) add_to_sketch = true;
+					else add_to_sketch = false;
+				
 				} else {
 					//fprintf(stderr, "The length of the k-mer is not enough\n");
 					add_to_sketch = false;
@@ -140,8 +153,10 @@ int main(int argc, char** argv)
 				if(seedTab[seq->seq.s[i+k-1]] != 0)
 				{
 					//fprintf(stderr, "ok, the char is good\n");
-					add_to_sketch = true;
 					NTM64(seq->seq.s[i-1], seq->seq.s[i+k-1], k, h, hVec);
+					if((hVec[0] & mask) == 0) add_to_sketch = true;
+					else add_to_sketch = false;
+				
 				} else {
 					//fprintf(stderr, "INTERRUPT\n");
 					i = i+k-1;
