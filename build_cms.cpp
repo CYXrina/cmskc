@@ -13,7 +13,8 @@ using namespace std;
 
 uint64_t generate_mask(size_t tail_len)
 {
-	return (~0) >> (sizeof(uint64_t) - tail_len);
+	if(tail_len == 0) return 0;
+	return static_cast<uint64_t>(~0) >> (sizeof(uint64_t) * 8 - tail_len);
 }
 
 void print_help()
@@ -32,12 +33,11 @@ void print_help()
 
 int main(int argc, char** argv)
 {
-	size_t k, h, d, t, seq_len;
+	uint64_t k, h, d, t, seq_len, mask;
 	int c, streaming;
-	char output_file[100];
+	char *output_file;
 	char *input_file;
 	FILE *instream;
-	uint64_t mask;
 	gzFile fp;
 	kseq_t *seq;
 	ketopt_t opt = KETOPT_INIT;
@@ -67,7 +67,10 @@ int main(int argc, char** argv)
 		else if(c == 'h') h = strtoull(opt.arg, nullptr, 10);
 		else if(c == 'd') d = strtoull(opt.arg, nullptr, 10);
 		else if(c == 't') t = strtoull(opt.arg, nullptr, 10);
-		else if(c == 'o') strcpy(output_file, opt.arg);
+		else if(c == 'o') {
+			output_file = static_cast<char*>(malloc(strlen(opt.arg) + 1));
+			strcpy(output_file, opt.arg);
+		}
 		else if(c == 'i') {
 			input_file = new char[strlen(opt.arg)];
 			strcpy(input_file, opt.arg);
@@ -105,8 +108,9 @@ int main(int argc, char** argv)
 	//Input handling
 	
 	uint64_t hVec[h];
-	if(t > sizeof(uint64_t)) t = sizeof(uint64_t);
+	if(t > sizeof(uint64_t) * 8) t = sizeof(uint64_t) * 8;
 	mask = generate_mask(t);
+	//fprintf(stderr, "mask = %lu\n", mask);
 	bool first = true;
 	while(kseq_read(seq) >= 0)
 	{
@@ -180,5 +184,8 @@ int main(int argc, char** argv)
 	gzclose(fp);
 	fclose(instream);
 
-	cms_export(&cms, output_file);
+	FILE *fo = fopen(output_file, "w+b");
+	cms_write_to_file(&cms, fo, 2, k, t);
+	fclose(fo);
+	free(output_file);
 }

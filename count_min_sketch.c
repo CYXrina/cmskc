@@ -7,6 +7,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <limits.h>
 #include <inttypes.h>       /* PRIu64 */
@@ -206,7 +207,7 @@ int cms_export(CountMinSketch *cms, char* filepath) {
         fprintf(stderr, "Can't open file %s!\n", filepath);
         return CMS_ERROR;
     }
-    __write_to_file(cms, fp, 0);
+    cms_write_to_file(cms, fp, 0);
     fclose(fp);
     return CMS_SUCCESS;
 }
@@ -218,10 +219,57 @@ int cms_import_alt(CountMinSketch *cms, char* filepath, cms_hash_function hash_f
         fprintf(stderr, "Can't open file %s!\n", filepath);
         return CMS_ERROR;
     }
-    __read_from_file(cms, fp, 0, NULL);
+    uint64_t *dummy;
+    cms_read_from_file(fp, cms, dummy);
     cms->hash_function = (hash_function == NULL) ? __default_hash : hash_function;
     fclose(fp);
     return CMS_SUCCESS;
+}
+
+void cms_write_to_file(CountMinSketch *cms, FILE *fp, uint64_t argc, ...) {
+    unsigned long long length = cms->depth * cms->width;
+    uint64_t param;
+    fwrite(&argc, sizeof(argc), 1, fp);
+    va_list args;
+    va_start(args, argc);
+    for(uint64_t i = 0; i < argc; ++i) {
+        param = va_arg(args, uint64_t);
+        fwrite(&param, sizeof(uint64_t), 1, fp);
+    }
+    va_end(args);
+    fwrite(&cms->width, sizeof(int32_t), 1, fp);
+    fwrite(&cms->depth, sizeof(int32_t), 1, fp);
+    fwrite(&cms->elements_added, sizeof(int64_t), 1, fp);
+    fwrite(cms->bins, sizeof(int32_t), length, fp);
+}
+
+uint64_t cms_read_from_file(FILE *fp, CountMinSketch *cms, uint64_t* args) {
+    /* read in the values from the file before getting the sketch itself */
+    size_t read;
+    uint64_t count;
+    unsigned long long length;
+    read = fread(&count, sizeof(count), 1, fp);
+    args = malloc(count * sizeof(uint64_t));
+    read = fread(args, sizeof(uint64_t), count, fp);
+    if(read != count) {
+        fprintf(stderr, "Unable to load the additional information stored in the Count-Min\n");
+        exit(1);
+    }
+    read = fread(&cms->width, sizeof(int32_t), 1, fp);
+    read = fread(&cms->depth, sizeof(int32_t), 1, fp);
+    cms->confidence = 1 - (1 / pow(2, cms->depth));
+    cms->error_rate = 2 / (double) cms->width;
+    read = fread(&cms->elements_added, sizeof(int64_t), 1, fp);
+    
+    length = cms->width * cms->depth;
+    if(cms->bins != NULL) fprintf(stderr, "Warning, the cms wasn't new before read -> possible memory leak\n");
+    cms->bins = malloc(length * sizeof(int32_t));
+    read = fread(cms->bins, sizeof(int32_t), length, fp);
+    if (read != length) {
+        fprintf(stderr, "Unable to read the payload\n");
+        exit(1);
+    }
+    return count;
 }
 
 /*******************************************************************************
@@ -237,51 +285,6 @@ static int __setup_cms(CountMinSketch *cms, unsigned int width, unsigned int dep
     cms->hash_function = (hash_function == NULL) ? __default_hash : hash_function;
 
     return CMS_SUCCESS;
-}
-
-static void __write_to_file(CountMinSketch *cms, FILE *fp, short on_disk) {
-    unsigned long long i, length = cms->depth * cms->width;
-    if (on_disk == 0) {
-        for (i = 0; i < length; i++) {
-            fwrite(&cms->bins[i], sizeof(int32_t), 1, fp);
-        }
-    } else {
-        // TODO: decide if this should be done directly on disk or not
-        // will need to write out everything by hand
-        // uint64_t i;
-        // int q = 0;
-        // for (i = 0; i < length; i++) {
-        //     fwrite(&q, sizeof(int), 1, fp);
-        // }
-    }
-    fwrite(&cms->width, sizeof(int32_t), 1, fp);
-    fwrite(&cms->depth, sizeof(int32_t), 1, fp);
-    fwrite(&cms->elements_added, sizeof(int64_t), 1, fp);
-}
-
-static void __read_from_file(CountMinSketch *cms, FILE *fp, short on_disk, char *filename) {
-    /* read in the values from the file before getting the sketch itself */
-    int offset = (sizeof(int32_t) * 2) + sizeof(long);
-    fseek(fp, offset * -1, SEEK_END);
-    size_t read;
-    read = fread(&cms->width, sizeof(int32_t), 1, fp);
-    read = fread(&cms->depth, sizeof(int32_t), 1, fp);
-    cms->confidence = 1 - (1 / pow(2, cms->depth));
-    cms->error_rate = 2 / (double) cms->width;
-    read = fread(&cms->elements_added, sizeof(int64_t), 1, fp);
-
-    rewind(fp);
-    long length = cms->width * cms->depth;
-    if (on_disk == 0) {
-        cms->bins = malloc(length * sizeof(int32_t));
-        read = fread(cms->bins, sizeof(int32_t), length, fp);
-        if (read != length) {
-            perror("__read_from_file: ");
-            exit(1);
-        }
-    } else {
-        // TODO: decide if this should be done directly on disk or not
-    }
 }
 
 static uint64_t* __default_hash(int num_hashes, char *key) {

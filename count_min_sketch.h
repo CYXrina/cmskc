@@ -55,8 +55,15 @@ int cms_destroy(CountMinSketch *cms);
 /* Reset the count-min sketch to zero */
 int cms_clear(CountMinSketch *cms);
 
+/* Write count-min sketch to file adding additional information in the header */
+void cms_write_to_file(CountMinSketch *cms, FILE *fp, uint64_t argc, ...);
+
 /* Export count-min sketch to file */
 int cms_export(CountMinSketch *cms, char* filepath);
+
+/* Read count-min sketch from file, args are additional information stored in the header */
+/* return the length of args */
+uint64_t cms_read_from_file(FILE *fp, CountMinSketch *cms, uint64_t* args);
 
 /*  Import count-min sketch from file
     NOTE: It is up to the caller to provide the correct hashing algorithm */
