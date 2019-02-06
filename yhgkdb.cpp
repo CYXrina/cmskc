@@ -41,7 +41,10 @@ void print_help()
 {
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "p\tnumber of bits of the frequencies to be used for bucketing\n");
-	fprintf(stderr, "b\tnumber of bits to keep for the minHash in the interval [0, 10]\n");
+	fprintf(stderr, "l\tnumber of heading bits of each hash for bucketing inside the HyperMinHash\n");
+	fprintf(stderr, "b\tlength of the b-bit signature to keep for the hyperMinHash in the interval [0, 10]\n");
+	fprintf(stderr, "s\tinitial width step. The first counter interval goes from 0 to s excluded\n");
+	fprintf(stderr, "q\tratio between the width of counter interval [i+1] and the width of counter interval [i]\n");
 	fprintf(stderr, "c\tpath to the pre-builded Count-Min-Sketch\n");
 	fprintf(stderr, "o\toutput file for the sketch. If not specified stdout is used.\n");
 	fprintf(stderr, "i\tinput (gzipped) file. stdin as default if not specified\n");
@@ -53,12 +56,13 @@ void print_help()
 
 int main(int argc, char* argv[])
 {
-	size_t k, seq_len;
+	size_t k, t, s, seq_len, sk_len, *pars;
 	int c, p, l, b;
+	double q;
 	gzFile fp;
 	kseq_t *seq;
 	ketopt_t opt = KETOPT_INIT;
-	FILE *instream, *outstream;
+	FILE *instream, *outstream, *cmsstream;
 	CountMinSketch cms;
 	hllmh *sk_vec;
 	int32_t freq_max, freq_min;
@@ -82,8 +86,7 @@ int main(int argc, char* argv[])
 	p = 10;
 	l = 10;
 	b = 5;
-	//TODO save k and the sampling tail length with the count-min sketch, avoid the repetition of parameters (possible errors)
-	while((c = ketopt(&opt, argc, argv, 1, "p:l:b:c:o:i:", longopts)) >= 0) {
+	while((c = ketopt(&opt, argc, argv, 1, "p:l:b:s:q:c:o:i:", longopts)) >= 0) {
 		//fprintf(stderr, "opt = %c | arg = %s\n", c, opt.arg);
 		if(c == 'p') {
 			p = atoi(opt.arg);
@@ -105,11 +108,31 @@ int main(int argc, char* argv[])
 				return -4;
 			}
 		}
+		else if(c == 's') {
+			s = strtoull(opt.arg, 10, nullptr);
+		}
+		else if(c == 'q') {
+			q = atof(opt.arg);
+			if(q < 1.0) {
+				fprintf(stderr, "q must be strictly greater than 1\n");
+				return -5;
+			}	
+		}
 		else if(c == 'c') {
-			if(cms_import(&cms, opt.arg)) {
-				fprintf(stderr, "Unable to open CountMinSketch\n");
+			cmsstream = fopen(opt.arg, "r+b");
+			if(cmsstream == nullptr) {
+				fprintf(stderr, "Unable to open count-min sketch file\n");
+				return -2
+			}
+			if(cms_read_from_file(&cms, opt.arg, pars) != 2) {
+				fprintf(stderr, "This count-min sketch has something else other than k and t as additional information\n");
+				free(pars);
 				return -2;
 			}
+			fclose(cmsstream);
+			k = pars[0];
+			t = pars[1];
+			free(pars);
 		}
 		else if(c == 'o') {
 			if(!(instream = fopen(opt.arg, "r"))) {
@@ -136,6 +159,7 @@ int main(int argc, char* argv[])
 	}
 	fp = gzdopen(fileno(instream), "r");
 	seq = kseq_init(fp);
+
 	
 	freq_max = 0;
 	freq_min = numeric_limits<int32_t>::max();
@@ -144,72 +168,82 @@ int main(int argc, char* argv[])
 		if(cms.bins[i] > freq_max) freq_max = cms.bins[i];
 		if(cms.bins[i] < freq_min) freq_min = cms.bins[i];
 	}
+
+	/*
 	size_t zeros_header_len = get_length_of_leading_zeros(freq_max);
 
 	if(32 - zeros_header_len < p) {
 		fprintf(stderr, "Warning! p value greater than maximum suffix frequency length\n");
 		fprintf(stderr, "Consequence: The sketch degenerates to a simple minHash\n");
 	}
+	*/
 	
-	sk_vec = malloc(sizeof(hllmh), pow(2, p) * cms.depth);
-	for(size_t i = 0; i < pow(2, p) * cms.depth; ++i) 
+	
+	//Create the HyperMinHash vector
+	sk_len = static_cast<size_t>(ceil(log(static_cast<double>(freq_max)/static_cast<double>(s))/log(q)));
+	sk_vec = malloc(sizeof(hllmh), sk_len);
+	for(size_t i = 0; i < sk_len; ++i) 
 		hllmh_init(&sk_vec[i], static_cast<uint8_t>(l), static_cast<uint8_t>(b), 1); //for now the number of minimums is 1
 
+	//The actual algorithm loop
 	uint64_t hVec[cms.depth];
 	bool first = true;
 	while(kseq_read(seq) >= 0)
 	{
 		seq_len = seq->seq.l;
 		bool add_to_sketch = false;
-		if(seq_len >= k) {
-		for(size_t i = 0; i < seq_len - k; ++i)
+		if(seq_len >= k) 
 		{
-			if(first) //find the first good kmer
+			for(size_t i = 0; i < seq_len - k; ++i)
 			{
-				first = false;
-				for(;seedTab[seq->seq.s[i]] == 0 && i < seq_len; ++i); //lock i into good position
-				size_t j = i;
-				size_t len = 0;
-				while(len < k && j < seq_len) //check the next k bases if they are good
+				if(first) //find the first good kmer
 				{
-					if(seedTab[seq->seq.s[j]] != 0)
+					first = false;
+					for(;seedTab[seq->seq.s[i]] == 0 && i < seq_len; ++i); //lock i into good position
+					size_t j = i;
+					size_t len = 0;
+					while(len < k && j < seq_len) //check the next k bases if they are good
 					{
-						++j;
-						++len;
+						if(seedTab[seq->seq.s[j]] != 0)
+						{
+							++j;
+							++len;
+						}
+						else {
+							i = ++j;
+							len = 0;
+						}
 					}
-					else {
-						i = ++j;
-						len = 0;
+					if(i < seq_len - k)
+					{
+						NTM64(&seq->seq.s[i], k, h, hVec);
+						if((hVec[0] & mask) == 0) add_to_sketch = true;
+						else add_to_sketch = false;
+					} else {
+						add_to_sketch = false;
+					}
+				} else { //roll
+					if(seedTab[seq->seq.s[i+k-1]] != 0)
+					{
+						NTM64(seq->seq.s[i-1], seq->seq.s[i+k-1], k, h, hVec);
+						if((hVec[0] & mask) == 0) add_to_sketch = true;
+						else add_to_sketch = false;
+					} else {
+						i = i+k-1;
+						first = true;
+						add_to_sketch = false;
 					}
 				}
-				if(i < seq_len - k)
+				if(add_to_sketch) //ok, process the frequency and the k-mer
 				{
-					NTM64(&seq->seq.s[i], k, h, hVec);
-					if((hVec[0] & mask) == 0) add_to_sketch = true;
-					else add_to_sketch = false;
-				} else {
-					add_to_sketch = false;
-				}
-			} else { //roll
-				if(seedTab[seq->seq.s[i+k-1]] != 0)
-				{
-					NTM64(seq->seq.s[i-1], seq->seq.s[i+k-1], k, h, hVec);
-					if((hVec[0] & mask) == 0) add_to_sketch = true;
-					else add_to_sketch = false;
-				} else {
-					i = i+k-1;
-					first = true;
-					add_to_sketch = false;
+					size_t get_idx = [] (size_t s, double q, int32_t f) {
+						return static_cast<size_t>(ceil( log(static_cast<double>(f) / static_cast(s)) / log(q) )) - 1;
+					};
+
+					int32_t freq = cms_check_alt(&cms, hVec, cms.depth);
+					hllmh_add(&sk_vec[get_idx(freq)], hVec[j]);
 				}
 			}
-			if(add_to_sketch) //ok, process the frequency and the k-mer
-			{
-				int32_t freq = cms_check_alt(&cms, hVec, cms.depth);
-				//uint32_t fbits = *((uint32_t*)(&freq));
-				//fbits >>= (sizeof(fbits) - p);
-				//for(size_t j = 0; j < cms.depth; ++j) hllmh_add(&sk_vec[fbits * cms.depth + j], hVec[j]);
-			}
-		}
 		} else {
 			fprintf(stderr, "SEQUENCE TOO SHORT\n");
 		}
