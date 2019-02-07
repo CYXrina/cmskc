@@ -32,5 +32,6 @@
 *.app
 yhgkdb
 build_cms
+sketcher
 compare_cms
 print_cms

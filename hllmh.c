@@ -1,9 +1,10 @@
 #include "hllmh.h"
+#include <math.h>
 
 #define MAX_B_LEN 10
 #define MAX_NMIN 16
 
-#define LEFTMOST_MASK = 0x80 00 00 00 00 00 00 00
+#define LEFTMOST_MASK 0x8000000000000000
 const uint8_t MAGIC_NUMBER = 0xAA;
 
 //return number > 0 if cmax is still the maximum
@@ -31,7 +32,7 @@ int hllmh_init(hllmh *sk, uint8_t prefix_bucket_len, uint8_t b, uint8_t number_o
     }
     sk->nmins = number_of_mins;
     sk->nbins = sk->nbuckets * sk->nmins;
-    sk->bins = malloc(sk->nbins, 2);
+    sk->bins = malloc(sk->nbins * sizeof(uint16_t));
     if(sk->bins == NULL) return 0;
     for(size_t i = 0; i < sk->nbins; ++i) sk->bins[i] = 0x03FF; //everything is at max value
     return 1;
@@ -96,13 +97,13 @@ int hllmh_get_from(FILE* instream, hllmh *sk)
         fprintf(stderr, "Unable to read the number of hashes to save for each bucket from the stream\n");
         return -3;
     }
-    if(&sk->nmins > MAX_NMIN) {
+    if(sk->nmins > MAX_NMIN) {
         fprintf(stderr, "Saving more than 16 minimums is excessive, this is not one of my files\n");
         return -2;
     }
     
     sk->nbins = sk->nbuckets * sk->nmins;
-    sk->bins = malloc(sk->nbins, 2);
+    sk->bins = malloc(sk->nbins * sizeof(uint16_t));
     read = fread(&sk->bins, sizeof(uint16_t), sk->nbins, instream);
     if(read != sk->nbins) {
         fprintf(stderr, "Unable to read the bins from the stream\n");
@@ -126,7 +127,7 @@ int hllmh_get_payload_from(FILE* instream, uint8_t prefix_bucket_len, uint8_t b,
     }
     sk->nmins = number_of_mins;
     sk->nbins = sk->nbuckets * sk->nmins;
-    sk->bins = malloc(sk->nbins, 2);
+    sk->bins = malloc(sk->nbins * sizeof(uint16_t));
     read = fread(&sk->bins, sizeof(uint16_t), sk->nbins, instream);
     if(read != sk->nbins) {
         fprintf(stderr, "Unable to read the bins from the stream\n");
@@ -136,7 +137,7 @@ int hllmh_get_payload_from(FILE* instream, uint8_t prefix_bucket_len, uint8_t b,
 
 int hllmh_add(hllmh *sk, uint64_t hash)
 {
-    uint8_t shift = 64 - pref_len;
+    uint8_t shift = 64 - sk->pref_len;
     uint64_t bucket = hash >> shift;
     uint8_t leading_zeros;
     for(leading_zeros = 0; leading_zeros < shift && !(hash & LEFTMOST_MASK); leading_zeros) hash <<= 1;
@@ -146,7 +147,7 @@ int hllmh_add(hllmh *sk, uint64_t hash)
     uint16_t maximum = 0xFC00; //remember that each hash is saved as [6|10] bits where the maximum for the header is 0 while the rest of the bits follw the general arithmetic rule (remember that the header stores the number of heading zeros).
     const uint64_t bucket_start = bucket * sk->nmins;
     const uint64_t bucket_end = (bucket + 1) * sk->nmins;
-    for(size_t i = bucket_start; i < bucket_end; ++i) if(is_max(shift, maximum, sk->bin[i]) < 0)
+    for(size_t i = bucket_start; i < bucket_end; ++i) if(is_max(maximum, sk->bins[i]) < 0)
     {
         max_idx = i;
         maximum = sk->bins[i];

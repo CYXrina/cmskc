@@ -1,6 +1,8 @@
 #include <zlib.h>
 #include <stdio.h>
 #include <cctype>
+#include <cmath>
+#include <limits>
 #include "ketopt.h"
 #include "kseq.h"
 #include "nthash.hpp"
@@ -32,9 +34,9 @@ uint8_t get_length_of_leading_zeros(int32_t max_freq)
 	return n;
 }
 
-uint64_t generate_mask(size_t tail_len)
+uint64_t generate_mask(size_t head_len)
 {
-	return (~0) >> (sizeof(uint64_t) - tail_len);
+	return static_cast<uint64_t>(~0) << (sizeof(uint64_t) - head_len);
 }
 
 void print_help()
@@ -59,6 +61,7 @@ int main(int argc, char* argv[])
 	size_t k, t, s, seq_len, sk_len, *pars;
 	int c, p, l, b;
 	double q;
+	uint64_t mask;
 	gzFile fp;
 	kseq_t *seq;
 	ketopt_t opt = KETOPT_INIT;
@@ -91,7 +94,7 @@ int main(int argc, char* argv[])
 		if(c == 'p') {
 			p = atoi(opt.arg);
 			if(p < 0) {
-				fpritnf(stderr, "p must be positive\n");
+				fprintf(stderr, "p must be positive\n");
 				return -3;
 			}
 		}
@@ -109,7 +112,7 @@ int main(int argc, char* argv[])
 			}
 		}
 		else if(c == 's') {
-			s = strtoull(opt.arg, 10, nullptr);
+			s = strtoull(opt.arg, nullptr, 10);
 		}
 		else if(c == 'q') {
 			q = atof(opt.arg);
@@ -122,9 +125,9 @@ int main(int argc, char* argv[])
 			cmsstream = fopen(opt.arg, "r+b");
 			if(cmsstream == nullptr) {
 				fprintf(stderr, "Unable to open count-min sketch file\n");
-				return -2
+				return -2;
 			}
-			if(cms_read_from_file(&cms, opt.arg, pars) != 2) {
+			if(cms_read_from_file(cmsstream, &cms, pars) != 2) {
 				fprintf(stderr, "This count-min sketch has something else other than k and t as additional information\n");
 				free(pars);
 				return -2;
@@ -181,13 +184,14 @@ int main(int argc, char* argv[])
 	
 	//Create the HyperMinHash vector
 	sk_len = static_cast<size_t>(ceil(log(static_cast<double>(freq_max)/static_cast<double>(s))/log(q)));
-	sk_vec = malloc(sizeof(hllmh), sk_len);
+	sk_vec = static_cast<hllmh*>(malloc(sizeof(hllmh) * sk_len));
 	for(size_t i = 0; i < sk_len; ++i) 
 		hllmh_init(&sk_vec[i], static_cast<uint8_t>(l), static_cast<uint8_t>(b), 1); //for now the number of minimums is 1
 
 	//The actual algorithm loop
 	uint64_t hVec[cms.depth];
 	bool first = true;
+	mask = generate_mask(t);
 	while(kseq_read(seq) >= 0)
 	{
 		seq_len = seq->seq.l;
@@ -216,7 +220,7 @@ int main(int argc, char* argv[])
 					}
 					if(i < seq_len - k)
 					{
-						NTM64(&seq->seq.s[i], k, h, hVec);
+						NTM64(&seq->seq.s[i], k, cms.depth, hVec);
 						if((hVec[0] & mask) == 0) add_to_sketch = true;
 						else add_to_sketch = false;
 					} else {
@@ -225,7 +229,7 @@ int main(int argc, char* argv[])
 				} else { //roll
 					if(seedTab[seq->seq.s[i+k-1]] != 0)
 					{
-						NTM64(seq->seq.s[i-1], seq->seq.s[i+k-1], k, h, hVec);
+						NTM64(seq->seq.s[i-1], seq->seq.s[i+k-1], k, cms.depth, hVec);
 						if((hVec[0] & mask) == 0) add_to_sketch = true;
 						else add_to_sketch = false;
 					} else {
@@ -236,12 +240,12 @@ int main(int argc, char* argv[])
 				}
 				if(add_to_sketch) //ok, process the frequency and the k-mer
 				{
-					size_t get_idx = [] (size_t s, double q, int32_t f) {
-						return static_cast<size_t>(ceil( log(static_cast<double>(f) / static_cast(s)) / log(q) )) - 1;
+					auto get_idx = [] (size_t s, double q, int32_t f) -> size_t {
+						return static_cast<size_t>(ceil( log(static_cast<double>(f) / static_cast<double>(s)) / log(q) )) - 1;
 					};
 
 					int32_t freq = cms_check_alt(&cms, hVec, cms.depth);
-					hllmh_add(&sk_vec[get_idx(freq)], hVec[j]);
+					hllmh_add(&sk_vec[get_idx(freq, s, q)], hVec[0]);
 				}
 			}
 		} else {

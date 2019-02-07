@@ -1,5 +1,6 @@
-#include <ctypes.h>
-#include <math.h>
+#include <inttypes.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 #ifdef __cplusplus
 extern "C" {
