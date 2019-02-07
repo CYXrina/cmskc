@@ -262,7 +262,7 @@ uint64_t cms_read_from_file(FILE *fp, CountMinSketch *cms, uint64_t* args) {
     read = fread(&cms->elements_added, sizeof(int64_t), 1, fp);
     
     length = cms->width * cms->depth;
-    if(cms->bins != NULL) fprintf(stderr, "Warning, the cms wasn't new before read -> possible memory leak\n");
+    //if(cms->bins != NULL) fprintf(stderr, "Warning, the cms wasn't new before read -> possible memory leak\n");
     cms->bins = malloc(length * sizeof(int32_t));
     read = fread(cms->bins, sizeof(int32_t), length, fp);
     if (read != length) {

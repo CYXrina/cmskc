@@ -11,10 +11,10 @@ KSEQ_INIT(gzFile, gzread)
 
 using namespace std;
 
-uint64_t generate_mask(size_t tail_len)
+uint64_t generate_mask(size_t head_len)
 {
-	if(tail_len == 0) return 0;
-	return static_cast<uint64_t>(~0) >> (sizeof(uint64_t) * 8 - tail_len);
+	if(head_len == 0) return 0;
+	return static_cast<uint64_t>(~0) << (sizeof(uint64_t) * 8 - head_len);
 }
 
 void print_help()
@@ -23,7 +23,7 @@ void print_help()
 	fprintf(stderr, "k\tk-mer length\n");
 	fprintf(stderr, "h\tnumber of hashes\n");
 	fprintf(stderr, "d\tnumber of cells for each hash\n");
-	fprintf(stderr, "t\tlength of trailing zeros for a hash to be considered (ntCard sampling)\n");
+	fprintf(stderr, "t\tlength of heading zeros for a hash to be considered (ntCard sampling)\n");
 	fprintf(stderr, "o\toutput file for the saved count-min sketch\n");
 	fprintf(stderr, "i\tinput (gzipped) file. stdin as default if not specified\n");
 	fprintf(stderr, "\nExample usage: \n");
@@ -171,6 +171,9 @@ int main(int argc, char** argv)
 			if(add_to_sketch) //ok, add the sketches to the vector
 			{
 				//fprintf(stderr, "Adding hash to sketch\n");
+				//fprintf(stdout, "[");
+				//for(int i = 0; i < h; ++i) fprintf(stdout, "%lu, ", hVec[i]);
+				//fprintf(stdout, "]\n");
 				int32_t freq = cms_add_alt(&cms, hVec, h);
 				//fprintf(stderr, "c[i+k] = %c, c[i] = %c at i = %lu\n", seq->seq.s[i+k], seq->seq.s[i], i);
 				//fprintf(stderr, "Element added, current estimated frequency = %i\n", freq);
@@ -183,6 +186,8 @@ int main(int argc, char** argv)
 	kseq_destroy(seq);
 	gzclose(fp);
 	fclose(instream);
+
+	//cms_print(&cms);
 
 	FILE *fo = fopen(output_file, "w+b");
 	cms_write_to_file(&cms, fo, 2, k, t);

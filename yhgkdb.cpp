@@ -4,7 +4,7 @@
 #include "ketopt.h"
 #include "kseq.h"
 #include "nthash.hpp"
-#include "hllmh.h" //TODO In the future remove the dependency on hllmh and build custom data structure to avoid redindancy and save (a little of RAM) memory.
+#include "fmm_sketch.h"
 extern "C" {
 #include "count_min_sketch.h"
 }
@@ -252,5 +252,7 @@ int main(int argc, char* argv[])
 	gzclose(fp);
 	fclose(instream);
 	
-	//TODO write sketch to file without saving all meta-information of hllmh sketch
+	//For the moment the function saves everything, it might be useful for non homogeneous minHashes
+	dump_hllmh_vector(sk_vec, sk_len, s, q, outstream);
+	fclose(outstream);
 }
