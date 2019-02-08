@@ -35,6 +35,7 @@ int main(int argc, char** argv)
 	int c, streaming;
 	char *input_file;
 	FILE *instream;
+	bool first;
 	gzFile fp;
 	kseq_t *seq;
 	ketopt_t opt = KETOPT_INIT;
@@ -108,66 +109,66 @@ int main(int argc, char** argv)
 	if(t > sizeof(uint64_t) * 8) t = sizeof(uint64_t) * 8;
 	mask = generate_mask(t);
 	//fprintf(stderr, "mask = %lu\n", mask);
-	bool first = true;
 	while(kseq_read(seq) >= 0)
 	{
 		seq_len = seq->seq.l;
 		bool add_to_sketch = false;
 		if(seq_len >= k) {
-		for(size_t i = 0; i < seq_len - k; ++i)
-		{
-			if(first)
+			first = true;
+			for(size_t i = 0; i < seq_len - k; ++i)
 			{
-				first = false;
-				for(;seedTab[seq->seq.s[i]] == 0 && i < seq_len; ++i); //lock i into good position
-				size_t j = i;
-				size_t len = 0;
-				while(len < k && j < seq_len) //check the next k bases if they are good
+				if(first)
 				{
-					if(seedTab[seq->seq.s[j]] != 0)
+					first = false;
+					for(;seedTab[seq->seq.s[i]] == 0 && i < seq_len; ++i); //lock i into good position
+					size_t j = i;
+					size_t len = 0;
+					while(len < k && j < seq_len) //check the next k bases if they are good
 					{
-						++j;
-						++len;
+						if(seedTab[seq->seq.s[j]] != 0)
+						{
+							++j;
+							++len;
+						}
+						else {
+							i = ++j;
+							len = 0;
+						}
 					}
-					else {
-						i = ++j;
-						len = 0;
+					if(i < seq_len - k)
+					{
+						NTM64(&seq->seq.s[i], k, h, hVec);
+						if((hVec[0] & mask) == 0) add_to_sketch = true;
+						else add_to_sketch = false;
+					
+					} else {
+						add_to_sketch = false;
+					}
+				} else {
+					if(seedTab[seq->seq.s[i+k-1]] != 0)
+					{
+						NTM64(seq->seq.s[i-1], seq->seq.s[i+k-1], k, h, hVec);
+						if((hVec[0] & mask) == 0) add_to_sketch = true;
+						else add_to_sketch = false;
+					
+					} else {
+						i = i+k-1;
+						first = true;
+						add_to_sketch = false;
 					}
 				}
-				if(i < seq_len - k)
+				if(add_to_sketch) //ok, add the sketches to the vector
 				{
-					NTM64(&seq->seq.s[i], k, h, hVec);
-					if((hVec[0] & mask) == 0) add_to_sketch = true;
-					else add_to_sketch = false;
-				
-				} else {
-					add_to_sketch = false;
-				}
-			} else {
-				if(seedTab[seq->seq.s[i+k-1]] != 0)
-				{
-					NTM64(seq->seq.s[i-1], seq->seq.s[i+k-1], k, h, hVec);
-					if((hVec[0] & mask) == 0) add_to_sketch = true;
-					else add_to_sketch = false;
-				
-				} else {
-					i = i+k-1;
-					first = true;
-					add_to_sketch = false;
+					if(cms_check_cell_binning_alt(&cms, hVec, h, d)) 
+					{
+						memcpy(debug_kmer, &seq->seq.s[i], k);
+						string buff(debug_kmer);
+						if(kmer_bag.count(buff) == 0) kmer_bag[buff] = 1;
+						else ++kmer_bag[buff];
+						//printf("%.*s", static_cast<int>(k), seq->seq.s + i);
+					}	
 				}
 			}
-			if(add_to_sketch) //ok, add the sketches to the vector
-			{
-				if(cms_check_cell_binning_alt(&cms, hVec, h, d)) 
-				{
-					memcpy(debug_kmer, &seq->seq.s[i], k);
-					string buff(debug_kmer);
-					if(kmer_bag.count(buff) == 0) kmer_bag[buff] = 1;
-					else ++kmer_bag[buff];
-					//printf("%.*s", static_cast<int>(k), seq->seq.s + i);
-				}	
-			}
-		}
 		} else {
 			fprintf(stderr, "SEQUENCE TOO SHORT\n");
 		}

@@ -59,17 +59,18 @@ void print_help()
 int main(int argc, char* argv[])
 {
 	size_t k, t, s, seq_len, sk_len, *pars;
+	int32_t freq_max, freq_min;
 	int c, p, l, b;
 	double q;
 	uint64_t mask;
+	FILE *instream, *outstream, *cmsstream;
+	bool first;
 	gzFile fp;
 	kseq_t *seq;
 	ketopt_t opt = KETOPT_INIT;
-	FILE *instream, *outstream, *cmsstream;
 	CountMinSketch cms;
 	hllmh *sk_vec;
-	int32_t freq_max, freq_min;
-
+	
 	static ko_longopt_t longopts[] = {
 		{NULL, 0, 0}
 	};
@@ -90,7 +91,6 @@ int main(int argc, char* argv[])
 	l = 10;
 	b = 5;
 	while((c = ketopt(&opt, argc, argv, 1, "p:l:b:s:q:c:o:i:", longopts)) >= 0) {
-		//fprintf(stderr, "opt = %c | arg = %s\n", c, opt.arg);
 		if(c == 'p') {
 			p = atoi(opt.arg);
 			if(p < 0) {
@@ -179,7 +179,6 @@ int main(int argc, char* argv[])
 	}
 	*/
 	
-	
 	//Create the HyperMinHash vector
 	sk_len = static_cast<size_t>(ceil(log(static_cast<double>(freq_max)/static_cast<double>(s))/log(q)));
 	sk_vec = static_cast<hllmh*>(malloc(sizeof(hllmh) * sk_len));
@@ -188,7 +187,6 @@ int main(int argc, char* argv[])
 
 	//The actual algorithm loop
 	uint64_t hVec[cms.depth];
-	bool first = true;
 	mask = generate_mask(t);
 	while(kseq_read(seq) >= 0)
 	{
@@ -196,6 +194,7 @@ int main(int argc, char* argv[])
 		bool add_to_sketch = false;
 		if(seq_len >= k) 
 		{
+			first = true;
 			for(size_t i = 0; i < seq_len - k; ++i)
 			{
 				if(first) //find the first good kmer

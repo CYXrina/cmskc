@@ -38,6 +38,7 @@ int main(int argc, char** argv)
 	char *output_file;
 	char *input_file;
 	FILE *instream;
+	bool first;
 	gzFile fp;
 	kseq_t *seq;
 	ketopt_t opt = KETOPT_INIT;
@@ -111,75 +112,76 @@ int main(int argc, char** argv)
 	if(t > sizeof(uint64_t) * 8) t = sizeof(uint64_t) * 8;
 	mask = generate_mask(t);
 	//fprintf(stderr, "mask = %lu\n", mask);
-	bool first = true;
+
 	while(kseq_read(seq) >= 0)
 	{
 		seq_len = seq->seq.l;
 		//fprintf(stderr, "Sequence length = %lu\n", seq->seq.l);
+		//printf("%s\n%s\n", seq->seq.name, seq->seq.s);
 		bool add_to_sketch = false;
-		//sketch the sequences
 		if(seq_len >= k) {
-		for(size_t i = 0; i < seq_len - k; ++i)
-		{
-			if(first) //find the first good kmer
+			first = true;
+			for(size_t i = 0; i < seq_len - k; ++i)
 			{
-				//fprintf(stderr, "Finding good k-mer\n");
-				first = false;
-				for(;seedTab[seq->seq.s[i]] == 0 && i < seq_len; ++i); //lock i into good position
-				size_t j = i;
-				size_t len = 0;
-				while(len < k && j < seq_len) //check the next k bases if they are good
+				if(first) //find the first good kmer
 				{
-					if(seedTab[seq->seq.s[j]] != 0)
+					//fprintf(stderr, "Finding good k-mer\n");
+					first = false;
+					for(;seedTab[seq->seq.s[i]] == 0 && i < seq_len; ++i); //lock i into good position
+					size_t j = i;
+					size_t len = 0;
+					while(len < k && j < seq_len) //check the next k bases if they are good
 					{
-						++j;
-						++len;
+						if(seedTab[seq->seq.s[j]] != 0)
+						{
+							++j;
+							++len;
+						}
+						else {
+							i = ++j;
+							len = 0;
+						}
 					}
-					else {
-						i = ++j;
-						len = 0;
+					//fprintf(stderr, "Good k-mer found\n");
+					if(i < seq_len - k)
+					{
+						//fprintf(stderr, "Ok, add it to the sketch\n");
+						NTM64(&seq->seq.s[i], k, h, hVec);
+						if((hVec[0] & mask) == 0) add_to_sketch = true;
+						else add_to_sketch = false;
+					
+					} else {
+						//fprintf(stderr, "The length of the k-mer is not enough\n");
+						add_to_sketch = false;
 					}
-				}
-				//fprintf(stderr, "Good k-mer found\n");
-				if(i < seq_len - k)
-				{
-					//fprintf(stderr, "Ok, add it to the sketch\n");
-					NTM64(&seq->seq.s[i], k, h, hVec);
-					if((hVec[0] & mask) == 0) add_to_sketch = true;
-					else add_to_sketch = false;
-				
 				} else {
-					//fprintf(stderr, "The length of the k-mer is not enough\n");
-					add_to_sketch = false;
+					//fprintf(stderr, "Rolling %lu: \n", i);
+					if(seedTab[seq->seq.s[i+k-1]] != 0)
+					{
+						//fprintf(stderr, "ok, the char is good\n");
+						NTM64(seq->seq.s[i-1], seq->seq.s[i+k-1], k, h, hVec);
+						if((hVec[0] & mask) == 0) add_to_sketch = true;
+						else add_to_sketch = false;
+					
+					} else {
+						//fprintf(stderr, "INTERRUPT\n");
+						i = i+k-1;
+						first = true;
+						add_to_sketch = false;
+					}
 				}
+				if(add_to_sketch) //ok, add the sketches to the vector
+				{
+					//fprintf(stderr, "Adding hash to sketch\n");
+					//fprintf(stdout, "[");
+					//for(int i = 0; i < h; ++i) fprintf(stdout, "%lu, ", hVec[i]);
+					//fprintf(stdout, "]\n");
+					int32_t freq = cms_add_alt(&cms, hVec, h);
+					//fprintf(stderr, "c[i+k] = %c, c[i] = %c at i = %lu\n", seq->seq.s[i+k], seq->seq.s[i], i);
+					//fprintf(stderr, "Element added, current estimated frequency = %i\n", freq);
+				}
+			}
 			} else {
-				//fprintf(stderr, "Rolling %lu: \n", i);
-				if(seedTab[seq->seq.s[i+k-1]] != 0)
-				{
-					//fprintf(stderr, "ok, the char is good\n");
-					NTM64(seq->seq.s[i-1], seq->seq.s[i+k-1], k, h, hVec);
-					if((hVec[0] & mask) == 0) add_to_sketch = true;
-					else add_to_sketch = false;
-				
-				} else {
-					//fprintf(stderr, "INTERRUPT\n");
-					i = i+k-1;
-					first = true;
-					add_to_sketch = false;
-				}
-			}
-			if(add_to_sketch) //ok, add the sketches to the vector
-			{
-				//fprintf(stderr, "Adding hash to sketch\n");
-				//fprintf(stdout, "[");
-				//for(int i = 0; i < h; ++i) fprintf(stdout, "%lu, ", hVec[i]);
-				//fprintf(stdout, "]\n");
-				int32_t freq = cms_add_alt(&cms, hVec, h);
-				//fprintf(stderr, "c[i+k] = %c, c[i] = %c at i = %lu\n", seq->seq.s[i+k], seq->seq.s[i], i);
-				//fprintf(stderr, "Element added, current estimated frequency = %i\n", freq);
-			}
-		}
-		} else {
 			fprintf(stderr, "SEQUENCE TOO SHORT\n");
 		}
 	}
