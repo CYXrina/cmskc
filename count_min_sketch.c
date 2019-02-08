@@ -123,6 +123,16 @@ int32_t cms_remove_inc(CountMinSketch *cms, char* key, uint32_t x) {
     return num_add;
 }
 
+uint8_t cms_check_cell_binning_alt(CountMinSketch *cms, uint64_t* hashes, size_t hidx, size_t bidx)
+{
+    size_t i, cbin = hidx * cms->width + bidx;
+    for(i = 0; i < cms->depth; ++i) {
+        size_t bin = (hashes[i] % cms->width) + (i * cms->width);
+        if(cbin == bin) return 1;
+    }
+    return 0;
+}
+
 int32_t cms_check_alt(CountMinSketch *cms, uint64_t* hashes, int num_hashes) {
     if (num_hashes < cms->depth) {
         fprintf(stderr, "Insufficient hashes to complete the min lookup of the element to the count-min sketch!");
@@ -219,20 +229,21 @@ int cms_import_alt(CountMinSketch *cms, char* filepath, cms_hash_function hash_f
         fprintf(stderr, "Can't open file %s!\n", filepath);
         return CMS_ERROR;
     }
-    uint64_t *dummy;
-    cms_read_from_file(fp, cms, dummy);
+    uint64_t *dummy = NULL;
+    cms_read_from_file(fp, cms, &dummy);
+    if(dummy != NULL) free(dummy);
     cms->hash_function = (hash_function == NULL) ? __default_hash : hash_function;
     fclose(fp);
     return CMS_SUCCESS;
 }
 
-void cms_write_to_file(CountMinSketch *cms, FILE *fp, uint64_t argc, ...) {
+void cms_write_to_file(CountMinSketch *cms, FILE *fp, uint64_t count, ...) {
     unsigned long long length = cms->depth * cms->width;
     uint64_t param;
-    fwrite(&argc, sizeof(argc), 1, fp);
+    fwrite(&count, sizeof(count), 1, fp);
     va_list args;
-    va_start(args, argc);
-    for(uint64_t i = 0; i < argc; ++i) {
+    va_start(args, count);
+    for(uint64_t i = 0; i < count; ++i) {
         param = va_arg(args, uint64_t);
         fwrite(&param, sizeof(uint64_t), 1, fp);
     }
@@ -243,14 +254,14 @@ void cms_write_to_file(CountMinSketch *cms, FILE *fp, uint64_t argc, ...) {
     fwrite(cms->bins, sizeof(int32_t), length, fp);
 }
 
-uint64_t cms_read_from_file(FILE *fp, CountMinSketch *cms, uint64_t* args) {
+uint64_t cms_read_from_file(FILE *fp, CountMinSketch *cms, uint64_t** args) {
     /* read in the values from the file before getting the sketch itself */
     size_t read;
     uint64_t count;
     unsigned long long length;
     read = fread(&count, sizeof(count), 1, fp);
-    args = malloc(count * sizeof(uint64_t));
-    read = fread(args, sizeof(uint64_t), count, fp);
+    *args = malloc(count * sizeof(uint64_t));
+    read = fread(*args, sizeof(uint64_t), count, fp);
     if(read != count) {
         fprintf(stderr, "Unable to load the additional information stored in the Count-Min\n");
         exit(1);

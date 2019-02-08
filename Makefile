@@ -1,10 +1,13 @@
-all:builder sketcher compare print
+all:builder sketcher cell_dumper compare print
 
 builder:build_cms count_min_sketch
 	g++ -o build_cms build_cms.o count_min_sketch.o -lz -lm
 
 sketcher:yhgkdb fmm_sketch hllmh count_min_sketch
-	g++ -o sketcher yhgkdb.o count_min_sketch.o fmm_sketch.o hllmh.o -lz -lm
+	g++ -o sketcher -g yhgkdb.o count_min_sketch.o fmm_sketch.o hllmh.o -lz -lm
+
+cell_dumper:dump_cell count_min_sketch
+	g++ -o dump_cell dump_cell.o count_min_sketch.o -lz -lm
 
 build_cms:
 	g++ -c build_cms.cpp -o build_cms.o
@@ -26,3 +29,6 @@ fmm_sketch:
 
 hllmh:
 	gcc -c hllmh.c -o hllmh.o
+
+dump_cell:
+	g++ -c dump_cell.cpp -o dump_cell.o

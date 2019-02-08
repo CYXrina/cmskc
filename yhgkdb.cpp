@@ -127,7 +127,7 @@ int main(int argc, char* argv[])
 				fprintf(stderr, "Unable to open count-min sketch file\n");
 				return -2;
 			}
-			if(cms_read_from_file(cmsstream, &cms, pars) != 2) {
+			if(cms_read_from_file(cmsstream, &cms, &pars) != 2) {
 				fprintf(stderr, "This count-min sketch has something else other than k and t as additional information\n");
 				free(pars);
 				return -2;
@@ -157,9 +157,7 @@ int main(int argc, char* argv[])
 	}
 	if(instream == nullptr) instream = stdin;
 	if(outstream == nullptr) outstream = stdout;
-	if(k == 0) {
-		fprintf(stderr, "Use -k to specify the k-mer length (or if you insterted 0 it is not a proper setting\n");
-	}
+	fprintf(stderr, "k = %lu | t = %lu\n", k, t);
 	fp = gzdopen(fileno(instream), "r");
 	seq = kseq_init(fp);
 

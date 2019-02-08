@@ -2,10 +2,11 @@
 #define BARRUST_SIMPLE_COUNT_MIN_SKETCH_H__
 
 /*******************************************************************************
-***     Author: Tyler Barrus
-***     email:  barrust@gmail.com
-***     Version: 0.1.5
-***     License: MIT 2017
+***     Original Author:    Tyler Barrus (barrust@gmail.com)
+***     Author :            Yoshihiro Shibuya
+***     gitHub:             FIXME
+***     Version:            0.0.1
+***     License:            MIT 2017
 *******************************************************************************/
 
 #include <stdint.h>
@@ -22,7 +23,7 @@
 typedef uint64_t* (*cms_hash_function) (int num_hashes, char *key);
 
 typedef struct {
-    uint32_t depth;
+    uint32_t depth; //FIXME change type of depth and width to size_t
     uint32_t width;
     int64_t elements_added;
     double confidence;
@@ -63,7 +64,7 @@ int cms_export(CountMinSketch *cms, char* filepath);
 
 /* Read count-min sketch from file, args are additional information stored in the header */
 /* return the length of args */
-uint64_t cms_read_from_file(FILE *fp, CountMinSketch *cms, uint64_t* args);
+uint64_t cms_read_from_file(FILE *fp, CountMinSketch *cms, uint64_t** args);
 
 /*  Import count-min sketch from file
     NOTE: It is up to the caller to provide the correct hashing algorithm */
@@ -99,6 +100,9 @@ static __inline__ int32_t cms_remove(CountMinSketch *cms, char* key) {
 static __inline__ int32_t cms_remove_alt(CountMinSketch *cms, uint64_t* hashes, int num_hashes) {
     return cms_remove_inc_alt(cms, hashes, num_hashes, 1);
 }
+
+/* Check if the given hash value hash to the given cell */
+uint8_t cms_check_cell_binning_alt(CountMinSketch *cms, uint64_t* hashes, size_t hidx, size_t bidx);
 
 /* Determine the maximum number of times the key may have been inserted */
 int32_t cms_check(CountMinSketch *cms, char* key);
