@@ -22,7 +22,7 @@ typedef struct {
     uint16_t *bins;
 } hllmh;
 
-int hllmh_init(hllmh *sk, uint8_t prefix_bucket_len, uint8_t b, uint8_t number_of_mins);
+int hllmh_init(hllmh *sk, uint8_t prefix_bucket_len, uint8_t number_of_mins);
 int hllmh_serialize_to(hllmh *sk, FILE *outstream);
 int hllmh_get_from(FILE* instream, hllmh *sk);
 int hllmh_add(hllmh *sk, uint64_t hash);

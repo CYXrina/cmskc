@@ -100,7 +100,7 @@ int main(int argc, char** argv)
 	fp = gzdopen(fileno(instream), "r");
 	seq = kseq_init(fp);
 	
-	uint64_t hVec[h];
+	uint64_t *hVec = static_cast<uint64_t*>(malloc(sizeof(uint64_t) * h));
 	if(t > sizeof(uint64_t) * 8) t = sizeof(uint64_t) * 8;
 	mask = generate_mask(t);
 	while(kseq_read(seq) >= 0)
@@ -162,7 +162,7 @@ int main(int argc, char** argv)
 				}
 				if(add_to_sketch) //ok, add the sketches to the vector
 				{
-					//fprintf(stderr, "Adding hash to sketch\n");
+					fprintf(stderr, "Adding hash to sketch\n");
 					//fprintf(stdout, "[");
 					//for(int i = 0; i < h; ++i) fprintf(stdout, "%lu, ", hVec[i]);
 					//fprintf(stdout, "]\n");
@@ -175,6 +175,7 @@ int main(int argc, char** argv)
 			fprintf(stderr, "SEQUENCE TOO SHORT\n");
 		}
 	}
+	free(hVec);
 	kseq_destroy(seq);
 	gzclose(fp);
 	fclose(instream);

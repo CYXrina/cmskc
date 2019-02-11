@@ -36,7 +36,8 @@ uint8_t get_length_of_leading_zeros(int32_t max_freq)
 
 uint64_t generate_mask(size_t head_len)
 {
-	return static_cast<uint64_t>(~0) << (sizeof(uint64_t) - head_len);
+	if(head_len == 0) return 0;
+	return static_cast<uint64_t>(~0) << (sizeof(uint64_t) * 8 - head_len);
 }
 
 void print_help()
@@ -187,11 +188,12 @@ int main(int argc, char* argv[])
 	sk_len = static_cast<size_t>(ceil(log(static_cast<double>(freq_max)/static_cast<double>(s))/log(q)));
 	sk_vec = static_cast<hllmh*>(malloc(sizeof(hllmh) * sk_len));
 	for(size_t i = 0; i < sk_len; ++i)
-		hllmh_init(&sk_vec[i], static_cast<uint8_t>(l), static_cast<uint8_t>(b), static_cast<uint8_t>(m)); //for now the number of minimums is 1
+		hllmh_init(&sk_vec[i], static_cast<uint8_t>(l), static_cast<uint8_t>(m)); //for now the number of minimums is 1
 
 	//The actual algorithm loop
-	uint64_t hVec[cms.depth];
+	uint64_t *hVec = static_cast<uint64_t*>(malloc(sizeof(uint64_t) * cms.depth));
 	mask = generate_mask(t);
+	fprintf(stderr, "control 1\n");
 	while(kseq_read(seq) >= 0)
 	{
 		seq_len = seq->seq.l;
@@ -242,12 +244,12 @@ int main(int argc, char* argv[])
 				if(add_to_sketch) //ok, process the frequency and the k-mer
 				{
 					auto get_idx = [] (size_t s, double q, int32_t f) -> size_t {
-						return static_cast<size_t>(ceil( log(static_cast<double>(f) / static_cast<double>(s)) / log(q) )) - 1;
+						return static_cast<size_t>(ceil( log(static_cast<double>(f) / static_cast<double>(s)) / log(q) ));
 					};
 
 					int32_t freq = cms_check_alt(&cms, hVec, cms.depth);
-					size_t idx = get_idx(freq, s, q);
-					//fprintf(stderr, "Add item %lu with frequency %i to bucket %lu", hVec[0], freq, idx);
+					size_t idx = get_idx(s, q, freq);
+					fprintf(stderr, "Add item %lu with frequency %i to bucket %lu\n", hVec[0], freq, idx);
 					hllmh_add(&sk_vec[get_idx(freq, s, q)], hVec[0]);
 				}
 			}
@@ -255,6 +257,7 @@ int main(int argc, char* argv[])
 			fprintf(stderr, "SEQUENCE TOO SHORT\n");
 		}
 	}
+	free(hVec);
 	kseq_destroy(seq);
 	gzclose(fp);
 	fclose(instream);

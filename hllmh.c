@@ -7,25 +7,26 @@
 #define LEFTMOST_MASK 0x8000000000000000
 const uint8_t MAGIC_NUMBER = 0xAA;
 
-//return number > 0 if cmax is still the maximum
-//return 0 if query is equal to cmax
-//return number < 0 if cmax must be replaced
-int is_max(uint16_t cmax, uint16_t q)
+//return number > 0 if q is greater than cmin
+//return 0 if query is equal to cmin
+//return number < 0 if q is a new minimum
+int is_min(uint16_t cmin, uint16_t q)
 {
-    int b_diff = (q >> 10) - (cmax >> 10);
+    int b_diff = (q >> 10) - (cmin >> 10);
     if(b_diff != 0) return b_diff;
-    else return (cmax & 0x03FF) - (q & 0x03FF);
+    else return (q & 0x03FF) - (cmin & 0x03FF);
 }
 
-int hllmh_init(hllmh *sk, uint8_t prefix_bucket_len, uint8_t b, uint8_t number_of_mins)
+int hllmh_init(hllmh *sk, uint8_t prefix_bucket_len, uint8_t number_of_mins)
 {
     sk->pref_len = prefix_bucket_len;
     sk->nbuckets = pow(2, sk->pref_len);
+    /*
     if(b > MAX_B_LEN) {
         fprintf(stderr, "The maximum dimension for the b-bit part is 10 bits\n");
         return -1;
-    }
-    sk->b = b;
+    }*/
+    sk->b = 0; //FIXME b is not used anymore
     if(number_of_mins > MAX_NMIN) {
         fprintf(stderr, "Saving more than 16 minimums is a bit excessive, don't you think?\n");
         return -2;
@@ -44,7 +45,7 @@ int hllmh_serialize_to(hllmh *sk, FILE *outstream)
     {
         fwrite(&MAGIC_NUMBER, sizeof(uint8_t), 1, outstream);
         fwrite(&sk->pref_len, sizeof(uint8_t), 1, outstream);
-        fwrite(&sk->b, sizeof(uint8_t), 1, outstream);
+        fwrite(&sk->b, sizeof(uint8_t), 1, outstream); //FIXME b is not used anymore!
         fwrite(&sk->nmins, sizeof(uint8_t), 1, outstream);
         fwrite(sk->bins, sizeof(uint16_t), sk->nbins, outstream);
         return 1;
@@ -111,16 +112,17 @@ int hllmh_get_from(FILE* instream, hllmh *sk)
     }
 }
 
-int hllmh_get_payload_from(FILE* instream, uint8_t prefix_bucket_len, uint8_t b, uint8_t number_of_mins, hllmh *sk)
+int hllmh_get_payload_from(FILE* instream, uint8_t prefix_bucket_len, uint8_t number_of_mins, hllmh *sk)
 {
     size_t read;
     sk->pref_len = prefix_bucket_len;
     sk->nbuckets = pow(2, sk->pref_len);
+    /*
     if(b > MAX_B_LEN) {
         fprintf(stderr, "The maximum dimension for the b-bit part is 10 bits\n");
         return -1;
-    }
-    sk->b = b;
+    } */
+    sk->b = 0; //FIXME b is not used anymore
     if(number_of_mins > MAX_NMIN) {
         fprintf(stderr, "Saving more than 16 minimums is a bit excessive, don't you think?\n");
         return -2;
@@ -138,21 +140,28 @@ int hllmh_get_payload_from(FILE* instream, uint8_t prefix_bucket_len, uint8_t b,
 int hllmh_add(hllmh *sk, uint64_t hash)
 {
     uint8_t shift = 64 - sk->pref_len;
-    uint64_t bucket = hash >> shift;
+    uint64_t bucket = hash >> shift; //ok, shift of unsigned will fill with 0s
+    hash <<= sk->pref_len;
     uint8_t leading_zeros;
-    for(leading_zeros = 0; leading_zeros < shift && !(hash & LEFTMOST_MASK); leading_zeros) hash <<= 1;
-    uint16_t h_elem = (hash >> 54) | (leading_zeros << 10); 
+    for(leading_zeros = 0; leading_zeros < shift && !(hash & LEFTMOST_MASK); ++leading_zeros) hash <<= 1;
+    uint16_t h_elem = (hash >> 54) | (leading_zeros << 10);
     
-    uint64_t max_idx;
-    uint16_t maximum = 0xFC00; //remember that each hash is saved as [6|10] bits where the maximum for the header is 0 while the rest of the bits follw the general arithmetic rule (remember that the header stores the number of heading zeros).
+    uint16_t minimum = 0x03FF; //remember that each hash is saved as [6|10] bits where the maximum for the header is 0 while the rest of the bits follw the general arithmetic rule (remember that the header stores the number of heading zeros).
     const uint64_t bucket_start = bucket * sk->nmins;
     const uint64_t bucket_end = (bucket + 1) * sk->nmins;
-    for(size_t i = bucket_start; i < bucket_end; ++i) if(is_max(maximum, sk->bins[i]) < 0)
+    uint64_t max_idx = bucket_start;
+    for(size_t i = bucket_start; i < bucket_end; ++i) if(is_min(minimum, sk->bins[i]) < 0)
     {
         max_idx = i;
-        maximum = sk->bins[i];
+        minimum = sk->bins[i];
     }
-    if(is_max(maximum, h_elem) > 0) sk->bins[max_idx] = h_elem;
+    fprintf(stderr, "minimum = %hu, h_elem = %hu\n", minimum, h_elem);
+    if(is_min(minimum, h_elem) < 0) {
+        fprintf(stderr, "bucket = %lu, bucket_start = %lu, bucket_end = %lu\n", bucket, bucket_start, bucket_end);
+        fprintf(stderr, "element to be added into %lu, nbins = %lu\n", max_idx, sk->nbins);
+        sk->bins[max_idx] = h_elem; //check if the new element is a new minimum
+    }
+        
     return 1;
 }
 
