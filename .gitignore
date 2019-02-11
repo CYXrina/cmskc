@@ -30,7 +30,7 @@
 *.exe
 *.out
 *.app
-yhgkdb
+ysgkdb
 build_cms
 sketcher
 compare_cms

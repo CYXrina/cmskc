@@ -103,16 +103,10 @@ int main(int argc, char** argv)
 	}
 	fp = gzdopen(fileno(instream), "r");
 	seq = kseq_init(fp);
-
-	//fprintf(stderr, "Input file opened\n");
-
-	//Input handling
 	
 	uint64_t hVec[h];
 	if(t > sizeof(uint64_t) * 8) t = sizeof(uint64_t) * 8;
 	mask = generate_mask(t);
-	//fprintf(stderr, "mask = %lu\n", mask);
-
 	while(kseq_read(seq) >= 0)
 	{
 		seq_len = seq->seq.l;

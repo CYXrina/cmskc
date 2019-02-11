@@ -42,16 +42,17 @@ uint64_t generate_mask(size_t head_len)
 void print_help()
 {
 	fprintf(stderr, "Options:\n");
-	fprintf(stderr, "p\tnumber of bits of the frequencies to be used for bucketing\n");
-	fprintf(stderr, "l\tnumber of heading bits of each hash for bucketing inside the HyperMinHash\n");
-	fprintf(stderr, "b\tlength of the b-bit signature to keep for the hyperMinHash in the interval [0, 10]\n");
+	//fprintf(stderr, "p\tnumber of bits of the frequencies to be used for bucketing\n");
+	fprintf(stderr, "l\tnumber of heading bits of each hash for bucketing inside the HyperMinHash. [10]\n");
+	fprintf(stderr, "m\tnumber of signatures to keep in each bucket. [4]\n");
+	fprintf(stderr, "b\tlength of the b-bit signature to keep for the hyperMinHash in the interval [0, 10]. [5]\n");
 	fprintf(stderr, "s\tinitial width step. The first counter interval goes from 0 to s excluded\n");
 	fprintf(stderr, "q\tratio between the width of counter interval [i+1] and the width of counter interval [i]\n");
 	fprintf(stderr, "c\tpath to the pre-builded Count-Min-Sketch\n");
-	fprintf(stderr, "o\toutput file for the sketch. If not specified stdout is used.\n");
 	fprintf(stderr, "i\tinput (gzipped) file. stdin as default if not specified\n");
-	//fprintf(stderr, "\nExample usage: \n");
-	//fprintf(stderr, "\n");
+	fprintf(stderr, "o\toutput file for the sketch. If not specified stdout is used.\n");
+	fprintf(stderr, "\nExample usage, remember that the total space usage is O((2^l) * mb) bits: \n");
+	fprintf(stderr, "cat input.fa.gz | sketcher -l 10 -m 4 -b 5 -s 10 -q 1.5 -c CountMin.cms > final_sketch.skb\n");
 	//fprintf(stderr, "\n");
 
 }
@@ -60,7 +61,8 @@ int main(int argc, char* argv[])
 {
 	size_t k, t, s, seq_len, sk_len, *pars;
 	int32_t freq_max, freq_min;
-	int c, p, l, b;
+	int c;
+	int l, m, b;
 	double q;
 	uint64_t mask;
 	FILE *instream, *outstream, *cmsstream;
@@ -74,60 +76,64 @@ int main(int argc, char* argv[])
 	static ko_longopt_t longopts[] = {
 		{NULL, 0, 0}
 	};
-	/*
-	if(argc < 9) {
+
+	if(argc < 7) {
 		fprintf(stderr, "Not enough arguments\n");
 		print_help();
 		if(argc == 1) return 0;
 		return -1;
 	}
-	*/
+
 	//fprintf(stderr, "Initialization and Checking done\n");
 
 	//reading command-line options
 	instream = nullptr;
 	outstream = nullptr;
-	p = 10;
 	l = 10;
+	m = 4;
 	b = 5;
-	while((c = ketopt(&opt, argc, argv, 1, "p:l:b:s:q:c:o:i:", longopts)) >= 0) {
-		if(c == 'p') {
+	while((c = ketopt(&opt, argc, argv, 1, "l:m:b:s:q:c:i:o:", longopts)) >= 0) {
+		/*if(c == 'p') {
 			p = atoi(opt.arg);
 			if(p < 0) {
 				fprintf(stderr, "p must be positive\n");
 				return -3;
 			}
-		}
-		else if(c == 'l') {
+		}*/
+		if (c == 'l') {
 			l = atoi(opt.arg);
-			if(l < 0 || l > 64) {
+			if (l < 0 || l > 64) {
 				fprintf(stderr, "l cannot be negative or greater than the number of bits of the hashes\n");
-			}
-		}
-		else if(c == 'b') {
-			b = atoi(opt.arg);
-			if(b > 10 || b < 0) {
-				fprintf(stderr, "b must be in the interval [0, 10]\n");
 				return -4;
 			}
 		}
-		else if(c == 's') {
+		else if (c == 'm') {
+			m = atoi(opt.arg);
+			if (m < 0 || m > 255) {
+				fprintf(stderr, "m must be a positive number in the range [0, 255].\n");
+				return -4;
+			}
+		} else if (c == 'b') {
+			b = atoi(opt.arg);
+			if (b > 10 || b < 0) {
+				fprintf(stderr, "b must be in the interval [0, 10]\n");
+				return -4;
+			}
+		} else if (c == 's') {
 			s = strtoull(opt.arg, nullptr, 10);
-		}
-		else if(c == 'q') {
+		} else if (c == 'q') {
 			q = atof(opt.arg);
-			if(q < 1.0) {
+			if (q < 1.0) {
 				fprintf(stderr, "q must be strictly greater than 1\n");
 				return -5;
 			}	
-		}
-		else if(c == 'c') {
+		} else if (c == 'c') {
 			cmsstream = fopen(opt.arg, "r+b");
-			if(cmsstream == nullptr) {
+			if (cmsstream == nullptr) {
 				fprintf(stderr, "Unable to open count-min sketch file\n");
 				return -2;
 			}
-			if(cms_read_from_file(cmsstream, &cms, &pars) != 2) {
+			if (cms_read_from_file(cmsstream, &cms, &pars) != 2) {
 				fprintf(stderr, "This count-min sketch has something else other than k and t as additional information\n");
 				free(pars);
 				return -2;
@@ -136,20 +142,17 @@ int main(int argc, char* argv[])
 			k = pars[0];
 			t = pars[1];
 			free(pars);
-		}
-		else if(c == 'o') {
-			if(!(instream = fopen(opt.arg, "r"))) {
+		} else if (c == 'i') {
+			if (!(instream = fopen(opt.arg, "r"))) {
 				fprintf(stderr, "Unable to open input file\n");
 				return -2;
 			}
-		}
-		else if(c == 'i') {
-			if(!(outstream = fopen(opt.arg, "w"))) {
+		} else if (c == 'o') {
+			if (!(outstream = fopen(opt.arg, "w"))) {
 				fprintf(stderr, "Unable to open output file\n");
 				return -2;
 			}
-		}
-		else {
+		} else {
 			fprintf(stderr, "Option (%c) not available\n", c);
 			print_help();
 			return -1;
@@ -157,7 +160,7 @@ int main(int argc, char* argv[])
 	}
 	if(instream == nullptr) instream = stdin;
 	if(outstream == nullptr) outstream = stdout;
-	fprintf(stderr, "k = %lu | t = %lu\n", k, t);
+	//fprintf(stderr, "k = %lu | t = %lu\n", k, t);
 	fp = gzdopen(fileno(instream), "r");
 	seq = kseq_init(fp);
 
@@ -182,8 +185,8 @@ int main(int argc, char* argv[])
 	//Create the HyperMinHash vector
 	sk_len = static_cast<size_t>(ceil(log(static_cast<double>(freq_max)/static_cast<double>(s))/log(q)));
 	sk_vec = static_cast<hllmh*>(malloc(sizeof(hllmh) * sk_len));
-	for(size_t i = 0; i < sk_len; ++i) 
-		hllmh_init(&sk_vec[i], static_cast<uint8_t>(l), static_cast<uint8_t>(b), 1); //for now the number of minimums is 1
+	for(size_t i = 0; i < sk_len; ++i)
+		hllmh_init(&sk_vec[i], static_cast<uint8_t>(l), static_cast<uint8_t>(b), static_cast<uint8_t>(m)); //for now the number of minimums is 1
 
 	//The actual algorithm loop
 	uint64_t hVec[cms.depth];
@@ -192,9 +195,11 @@ int main(int argc, char* argv[])
 	{
 		seq_len = seq->seq.l;
 		bool add_to_sketch = false;
+		fprintf(stderr, "sequence read with length = %lu\n", seq_len);
 		if(seq_len >= k) 
 		{
 			first = true;
+			fprintf(stderr, "Ok, minimum length satisfied\n");
 			for(size_t i = 0; i < seq_len - k; ++i)
 			{
 				if(first) //find the first good kmer
@@ -217,6 +222,7 @@ int main(int argc, char* argv[])
 					}
 					if(i < seq_len - k)
 					{
+						fprintf(stderr, "first kmer found\n");
 						NTM64(&seq->seq.s[i], k, cms.depth, hVec);
 						if((hVec[0] & mask) == 0) add_to_sketch = true;
 						else add_to_sketch = false;
@@ -226,6 +232,7 @@ int main(int argc, char* argv[])
 				} else { //roll
 					if(seedTab[seq->seq.s[i+k-1]] != 0)
 					{
+						fprintf(stderr, "Rolling\n");
 						NTM64(seq->seq.s[i-1], seq->seq.s[i+k-1], k, cms.depth, hVec);
 						if((hVec[0] & mask) == 0) add_to_sketch = true;
 						else add_to_sketch = false;
@@ -242,6 +249,8 @@ int main(int argc, char* argv[])
 					};
 
 					int32_t freq = cms_check_alt(&cms, hVec, cms.depth);
+					size_t idx = get_idx(freq, s, q);
+					fprintf(stderr, "Add item %lu with frequency %i to bucket %lu", hVec[0], freq, idx);
 					hllmh_add(&sk_vec[get_idx(freq, s, q)], hVec[0]);
 				}
 			}
