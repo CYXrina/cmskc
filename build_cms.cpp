@@ -35,9 +35,7 @@ int main(int argc, char** argv)
 {
 	uint64_t k, h, d, t, seq_len, mask;
 	int c, streaming;
-	char *output_file;
-	char *input_file;
-	FILE *instream;
+	FILE *instream, *outstream;
 	bool first;
 	gzFile fp;
 	kseq_t *seq;
@@ -61,22 +59,27 @@ int main(int argc, char** argv)
 
 	//reading command-line options
 	t = 0;
-	input_file = nullptr;
+	instream = nullptr;
+	outstream = nullptr;
 	while((c = ketopt(&opt, argc, argv, 1, "k:h:d:t:o:i:", longopts)) >= 0) {
 		//fprintf(stderr, "opt = %c | arg = %s\n", c, opt.arg);
-		if(c == 'k') k = strtoull(opt.arg, nullptr, 10);
-		else if(c == 'h') h = strtoull(opt.arg, nullptr, 10);
-		else if(c == 'd') d = strtoull(opt.arg, nullptr, 10);
-		else if(c == 't') t = strtoull(opt.arg, nullptr, 10);
-		else if(c == 'o') {
-			output_file = static_cast<char*>(malloc(strlen(opt.arg) + 1));
-			strcpy(output_file, opt.arg);
-		}
-		else if(c == 'i') {
-			input_file = new char[strlen(opt.arg)];
-			strcpy(input_file, opt.arg);
-		}
-		else {
+		if (c == 'k') k = strtoull(opt.arg, nullptr, 10);
+		else if (c == 'h') h = strtoull(opt.arg, nullptr, 10);
+		else if (c == 'd') d = strtoull(opt.arg, nullptr, 10);
+		else if (c == 't') t = strtoull(opt.arg, nullptr, 10);
+		else if (c == 'o') {
+			if(!(outstream = fopen(opt.arg, "w+b"))) {
+				fprintf(stderr, "Unable to open output file\n");
+				return -2;
+			//output_file = static_cast<char*>(malloc(strlen(opt.arg) + 1));
+			//strcpy(output_file, opt.arg);
+			}
+		} else if (c == 'i') {
+			if(!(instream = fopen(opt.arg, "r"))) {
+				fprintf(stderr, "Unable to open input file\n");
+				return -2;
+			}
+		} else {
 			fprintf(stderr, "Option (%c) not available\n", c);
 			print_help();
 			return -1;
@@ -90,16 +93,9 @@ int main(int argc, char** argv)
 		return -2;
 	}
 
-	//Opening the file
-	instream = nullptr;
-	if(input_file) {
-		instream = fopen(input_file, "r");
-		delete [] input_file;
-	}
-	else instream = stdin;
-	if(!instream) {
-		fprintf(stderr, "Unable to open the input file\n");
-		return 1;
+	//Check if stdin is used
+	if(instream == nullptr) {
+		instream = stdin;
 	}
 	fp = gzdopen(fileno(instream), "r");
 	seq = kseq_init(fp);
@@ -185,8 +181,6 @@ int main(int argc, char** argv)
 
 	//cms_print(&cms);
 
-	FILE *fo = fopen(output_file, "w+b");
-	cms_write_to_file(&cms, fo, 2, k, t);
-	fclose(fo);
-	free(output_file);
+	cms_write_to_file(&cms, outstream, 2, k, t);
+	fclose(outstream);
 }

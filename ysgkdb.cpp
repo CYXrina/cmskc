@@ -158,12 +158,13 @@ int main(int argc, char* argv[])
 			return -1;
 		}
 	}
-	if(instream == nullptr) instream = stdin;
-	if(outstream == nullptr) outstream = stdout;
-	//fprintf(stderr, "k = %lu | t = %lu\n", k, t);
+	//Check if stdin is used
+	if(instream == nullptr) {
+		instream = stdin;
+	}
 	fp = gzdopen(fileno(instream), "r");
 	seq = kseq_init(fp);
-
+	if(outstream == nullptr) outstream = stdout;
 	
 	freq_max = 0;
 	freq_min = numeric_limits<int32_t>::max();
@@ -195,11 +196,9 @@ int main(int argc, char* argv[])
 	{
 		seq_len = seq->seq.l;
 		bool add_to_sketch = false;
-		fprintf(stderr, "sequence read with length = %lu\n", seq_len);
 		if(seq_len >= k) 
 		{
 			first = true;
-			fprintf(stderr, "Ok, minimum length satisfied\n");
 			for(size_t i = 0; i < seq_len - k; ++i)
 			{
 				if(first) //find the first good kmer
@@ -222,7 +221,6 @@ int main(int argc, char* argv[])
 					}
 					if(i < seq_len - k)
 					{
-						fprintf(stderr, "first kmer found\n");
 						NTM64(&seq->seq.s[i], k, cms.depth, hVec);
 						if((hVec[0] & mask) == 0) add_to_sketch = true;
 						else add_to_sketch = false;
@@ -232,7 +230,6 @@ int main(int argc, char* argv[])
 				} else { //roll
 					if(seedTab[seq->seq.s[i+k-1]] != 0)
 					{
-						fprintf(stderr, "Rolling\n");
 						NTM64(seq->seq.s[i-1], seq->seq.s[i+k-1], k, cms.depth, hVec);
 						if((hVec[0] & mask) == 0) add_to_sketch = true;
 						else add_to_sketch = false;
@@ -250,7 +247,7 @@ int main(int argc, char* argv[])
 
 					int32_t freq = cms_check_alt(&cms, hVec, cms.depth);
 					size_t idx = get_idx(freq, s, q);
-					fprintf(stderr, "Add item %lu with frequency %i to bucket %lu", hVec[0], freq, idx);
+					//fprintf(stderr, "Add item %lu with frequency %i to bucket %lu", hVec[0], freq, idx);
 					hllmh_add(&sk_vec[get_idx(freq, s, q)], hVec[0]);
 				}
 			}
